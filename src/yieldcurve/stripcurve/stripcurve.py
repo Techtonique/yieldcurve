@@ -153,8 +153,18 @@ class CurveStripper(BaseEstimator, RegressorMixin):
             min_cv_error=getattr(self.estimator, 'best_score_', None)
         )
     
-    def predict(self, maturities: np.ndarray) -> np.ndarray:
-        """Predict spot rates for given maturities."""
+    def predict(self, maturities: np.ndarray) -> CurveRates:
+        """Predict rates for given maturities.
+        
+        Parameters
+        ----------
+        maturities : array-like of shape (n_samples,)
+            The maturities to predict for
+            
+        Returns
+        -------
+        CurveRates
+            Container with spot rates, discount factors, and forward rates
+        """
         check_array(maturities.reshape(-1, 1))
-        rates = self._calculate_rates(maturities.ravel())
-        return rates.spot_rates
+        return self._calculate_rates(maturities.ravel())
