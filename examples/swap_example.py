@@ -3,7 +3,7 @@ from yieldcurve.utils.utils import swap_cashflows_matrix, get_swap_rates
 
 def main():
     # Get example data from ap10 dataset
-    data = get_swap_rates("ap10")
+    data = get_swap_rates("and07")
     
     # Calculate swap cashflows using the example data
     result = swap_cashflows_matrix(
