@@ -1,0 +1,17 @@
+[project]
+name = "yieldcurve"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "T. Moudiki", email = "thierry.moudiki@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = []
+
+[project.scripts]
+yieldcurve = "yieldcurve:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
