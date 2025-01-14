@@ -1,7 +1,7 @@
 import numpy as np
 from yieldcurve.utils.utils import get_swap_rates
 from yieldcurve.stripcurve.stripcurve import CurveStripper
-from sklearn.linear_model import Ridge
+from sklearn.linear_model import Ridge, RidgeCV 
 from sklearn.ensemble import ExtraTreesRegressor
 import matplotlib.pyplot as plt
 
@@ -13,6 +13,7 @@ def main():
     stripper_laguerre = CurveStripper(
         estimator=ExtraTreesRegressor(n_estimators=100, 
                                       random_state=42),
+        #estimator=RidgeCV(alphas=[1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1, 10, 100]),
         lambda1=2.5,
         lambda2=4.5,
         type_regressors="laguerre"
@@ -21,6 +22,7 @@ def main():
     stripper_cubic = CurveStripper(
         estimator=ExtraTreesRegressor(n_estimators=100, 
                                       random_state=42),
+        #estimator=RidgeCV(alphas=[1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1, 10, 100]),
         type_regressors="cubic"
     )
     
