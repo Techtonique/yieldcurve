@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 
 def main():
     # Get example data
-    data = get_swap_rates("and07")
+    data = get_swap_rates("negativerates")
     
     # Create and fit both models
     stripper_laguerre = CurveStripper(

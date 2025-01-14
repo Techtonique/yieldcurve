@@ -1,6 +1,7 @@
 import numpy as np
 from sklearn.base import BaseEstimator, RegressorMixin
 from sklearn.linear_model import LinearRegression, Ridge
+from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.utils.validation import check_X_y, check_array
 from typing import Literal, Optional, Union
 from dataclasses import dataclass
@@ -37,7 +38,7 @@ class CurveStripper(BaseEstimator, RegressorMixin):
         lambda2: float = 4.5,
         type_regressors: Literal["laguerre", "cubic"] = "laguerre"
     ):
-        self.estimator = Ridge() if estimator is None else estimator
+        self.estimator = ExtraTreesRegressor(n_estimators=100, random_state=42) if estimator is None else estimator
         self.lambda1 = lambda1
         self.lambda2 = lambda2
         self.type_regressors = type_regressors
