@@ -1,7 +1,7 @@
 import numpy as np
 from yieldcurve.utils.utils import get_swap_rates
 from yieldcurve.stripcurve.stripcurve import CurveStripper
-from sklearn.kernel_ridge import KernelRidge
+from sklearn.ensemble import RandomForestRegressor
 import matplotlib.pyplot as plt
 
 def main():
@@ -10,14 +10,14 @@ def main():
     
     # Create and fit both models
     stripper_laguerre = CurveStripper(
-        estimator=KernelRidge(),
+        estimator=RandomForestRegressor(n_estimators=1000, random_state=42),
         lambda1=2.5,
         lambda2=4.5,
         type_regressors="laguerre"
     )
     
     stripper_cubic = CurveStripper(
-        estimator=KernelRidge(),
+        estimator=RandomForestRegressor(n_estimators=1000, random_state=42),
         type_regressors="cubic"
     )
     
@@ -33,7 +33,7 @@ def main():
     
     # Plot results
     fig, axes = plt.subplots(3, 2, figsize=(15, 12))
-    fig.suptitle('Comparison of Laguerre vs Cubic Basis Functions with ExtraTrees')
+    fig.suptitle('Comparison of Laguerre vs Cubic Basis Functions with RandomForestRegressor')
     
     # Plot Discount Factors
     axes[0, 0].plot(data.maturity, stripper_laguerre.rates_.discount_factors, 'o-', label='Original points')
