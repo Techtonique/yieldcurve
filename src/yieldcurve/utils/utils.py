@@ -1,5 +1,5 @@
 import numpy as np
-from typing import List, Dict, Union, Literal
+from typing import List, Dict, Union, Literal, NamedTuple
 from dataclasses import dataclass
 
 @dataclass
@@ -10,6 +10,10 @@ class SwapCashflows:
     swap_rates: np.ndarray
     cashflow_dates: np.ndarray
     cashflow_matrix: np.ndarray
+
+class SwapRatesData(NamedTuple):
+    maturity: np.ndarray
+    rate: np.ndarray
 
 def swap_cashflows_matrix(
     swap_rates: Union[List[float], np.ndarray],
@@ -94,3 +98,63 @@ def swap_cashflows_matrix(
         cashflow_dates=cashflow_dates_matrix,
         cashflow_matrix=swap_cashflows_matrix
     )
+
+def get_swap_rates(dataset: Literal["ap10", "and07", "ab13e6m", "ab13ois", "negativerates"]) -> SwapRatesData:
+    """
+    Get example swap rates datasets.
+
+    Args:
+        dataset: String specifying the dataset to use,
+                one of "ap10", "and07", "ab13e6m", "ab13ois", "negativerates"
+
+    Returns:
+        SwapRatesData containing maturity and rate vectors
+
+    Examples:
+        >>> print(get_swap_rates("ap10"))
+        SwapRatesData(maturity=array([ 1,  2,  3,  5,  7, 10, 12, 15, 20, 25]), 
+                     rate=array([0.042, 0.043, 0.047, 0.054, 0.057, 0.06 , 0.061, 0.059, 0.056, 0.0555]))
+    """
+    # Define all datasets
+    swap_rates: Dict[str, SwapRatesData] = {
+        "ap10": SwapRatesData(
+            maturity=np.array([1, 2, 3, 5, 7, 10, 12, 15, 20, 25]),
+            rate=np.array([4.2, 4.3, 4.7, 5.4, 5.7, 6, 6.1, 5.9, 5.6, 5.55]) / 100
+        ),
+        
+        "and07": SwapRatesData(
+            maturity=np.array([0.5, 1, 1.5, 2, 2.5, 3, 4, 5, 7, 10, 12, 15, 20, 30]),
+            rate=np.array([2.75, 3.10, 3.30, 3.43, 3.53, 3.30, 3.78, 3.95, 
+                          4.25, 4.50, 4.65, 4.78, 4.88, 4.85]) / 100
+        ),
+        
+        "ab13e6m": SwapRatesData(
+            maturity=np.array(list(range(1, 31)) + [35, 40, 50, 60]),
+            rate=np.array([
+                0.286, 0.324, 0.424, 0.576, 0.762, 0.954, 1.135, 1.303, 1.452, 1.584,
+                1.703, 1.809, 1.901, 1.976, 2.037, 2.086, 2.123, 2.150, 2.171, 2.187,
+                2.200, 2.211, 2.220, 2.228, 2.234, 2.239, 2.243, 2.247, 2.251, 2.256,
+                2.295, 2.348, 2.421, 2.463
+            ]) / 100
+        ),
+        
+        "ab13ois": SwapRatesData(
+            maturity=np.array(list(range(1, 13)) + [15, 20, 25, 30]),
+            rate=np.array([
+                0.000, 0.036, 0.127, 0.274, 0.456, 0.647, 0.827, 0.996, 1.147, 1.280,
+                1.404, 1.516, 1.764, 1.939, 2.003, 2.038
+            ]) / 100
+        ),
+        
+        "negativerates": SwapRatesData(
+            maturity=np.array([0.5, 1, 2, 3, 5]),
+            rate=np.array([-0.00337, -0.003610, -0.003647, -0.003413, -0.003047])
+        )
+    }
+    
+    if dataset not in swap_rates:
+        raise ValueError(
+            f"Dataset {dataset} not found. Available datasets: {', '.join(swap_rates.keys())}"
+        )
+    
+    return swap_rates[dataset]

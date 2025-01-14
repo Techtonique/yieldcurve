@@ -1,16 +1,22 @@
 import numpy as np
-from yieldcurve.utils.utils import swap_cashflows_matrix
+from yieldcurve.utils.utils import swap_cashflows_matrix, get_swap_rates
 
 def main():
-    # Example data
-    rates = [0.02, 0.025, 0.03]
-    maturities = [1, 2, 3]
+    # Get example data from ap10 dataset
+    data = get_swap_rates("ap10")
     
-    # Calculate swap cashflows
-    result = swap_cashflows_matrix(rates, maturities, "6m")
+    # Calculate swap cashflows using the example data
+    result = swap_cashflows_matrix(
+        swap_rates=data.rate,
+        maturities=data.maturity,
+        tenor_swaps="6m"
+    )
+    print("Input swap rates", result)
     
     # Print results
-    print("Swap Cashflow Matrix:")
+    print("Using AP10 dataset:")
+    print(f"Number of swaps: {result.nb_swaps}")
+    print("\nSwap Cashflow Matrix:")
     print(result.cashflow_matrix)
     print("\nCashflow Dates:")
     print(result.cashflow_dates)
