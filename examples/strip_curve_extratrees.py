@@ -7,7 +7,7 @@ from yieldcurveml.stripcurve import CurveStripper
 
 def main():
     # Get example data
-    data = get_swap_rates("and07")
+    data = get_swap_rates("negativerates")
     
     # Create and fit both models, plus bootstrap
     stripper_laguerre = CurveStripper(
