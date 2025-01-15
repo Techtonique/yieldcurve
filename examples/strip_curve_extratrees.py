@@ -33,29 +33,29 @@ def main():
     print(regression_report(stripper_cubic, "Cubic"))
 
     # Create figure
-    fig, axes = plt.subplots(2, 2, figsize=(15, 10))
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
     
     # Plot discount factors
-    axes[0, 0].plot(data.maturity, stripper_laguerre.curve_rates_.discount_factors, 'o-', label='Laguerre')
-    axes[0, 0].plot(data.maturity, stripper_cubic.curve_rates_.discount_factors, 's--', label='Cubic')
-    axes[0, 0].set_title('Discount Factors')
-    axes[0, 0].legend()
-    axes[0, 0].grid(True)
+    axes[0].plot(data.maturity, stripper_laguerre.curve_rates_.discount_factors, 'o-', label='Laguerre')
+    axes[0].plot(data.maturity, stripper_cubic.curve_rates_.discount_factors, 's--', label='Cubic')
+    axes[0].set_title('Discount Factors')
+    axes[0].legend()
+    axes[0].grid(True)
     
     # Plot spot rates
-    axes[0, 1].plot(data.maturity, stripper_laguerre.curve_rates_.spot_rates, 'o-', label='Laguerre')
-    axes[0, 1].plot(data.maturity, stripper_cubic.curve_rates_.spot_rates, 's--', label='Cubic')
-    axes[0, 1].plot(data.maturity, data.rate, 'kx', label='Original')
-    axes[0, 1].set_title('Spot Rates')
-    axes[0, 1].legend()
-    axes[0, 1].grid(True)
+    axes[1].plot(data.maturity, stripper_laguerre.curve_rates_.spot_rates, 'o-', label='Laguerre')
+    axes[1].plot(data.maturity, stripper_cubic.curve_rates_.spot_rates, 's--', label='Cubic')
+    axes[1].plot(data.maturity, data.rate, 'kx', label='Original')
+    axes[1].set_title('Spot Rates')
+    axes[1].legend()
+    axes[1].grid(True)
     
     # Plot forward rates (Laguerre only)
     if stripper_laguerre.curve_rates_.forward_rates is not None:
-        axes[1, 0].plot(data.maturity, stripper_laguerre.curve_rates_.forward_rates, 'o-', label='Laguerre')
-        axes[1, 0].set_title('Forward Rates (Laguerre)')
-        axes[1, 0].legend()
-        axes[1, 0].grid(True)
+        axes[2].plot(data.maturity, stripper_laguerre.curve_rates_.forward_rates, 'o-', label='Laguerre')
+        axes[2].set_title('Forward Rates (Laguerre)')
+        axes[2].legend()
+        axes[2].grid(True)
     
     plt.tight_layout()
     plt.show()

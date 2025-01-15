@@ -184,12 +184,12 @@ class CurveStripper(BaseEstimator, RegressorMixin):
             ])
             
             # Get coefficients from the estimator if possible
-            if hasattr(self.estimator, 'coef_'):
+            if hasattr(self.estimator, 'coef_') and self.estimator.coef_ is not None:
                 forward_rates = X_forward @ self.estimator.coef_
             else:
                 try: 
                     forward_rates = self.estimator.predict(X_forward)
-                except:
+                except Exception as e:
                     forward_rates = None
             
         return CurveRates(
