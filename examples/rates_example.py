@@ -1,4 +1,7 @@
-from yieldcurve.utils.utils import get_swap_rates
+import os 
+from yieldcurveml.utils.utils import get_swap_rates
+
+print(f"\n ----- Running: {os.path.basename(__file__)}... ----- \n")
 
 def main():
     # Get example data

@@ -1,8 +1,11 @@
 import numpy as np
-from yieldcurve.utils.utils import get_swap_rates
-from yieldcurve.stripcurve.stripcurve import CurveStripper
+from yieldcurveml.utils.utils import get_swap_rates
+from yieldcurveml.stripcurve.stripcurve import CurveStripper
 from sklearn.ensemble import RandomForestRegressor
 import matplotlib.pyplot as plt
+import os 
+
+print(f"\n ----- Running: {os.path.basename(__file__)}... ----- \n")
 
 def main():
     # Get example data

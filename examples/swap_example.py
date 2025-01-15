@@ -1,5 +1,8 @@
 import numpy as np
-from yieldcurve.utils.utils import swap_cashflows_matrix, get_swap_rates
+from yieldcurveml.utils.utils import swap_cashflows_matrix, get_swap_rates
+import os 
+
+print(f"\n ----- Running: {os.path.basename(__file__)}... ----- \n")
 
 def main():
     # Get example data from ap10 dataset
