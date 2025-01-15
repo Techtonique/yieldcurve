@@ -166,12 +166,7 @@ class CurveStripper(BaseEstimator, RegressorMixin):
     def _calculate_rates(self, maturities: np.ndarray) -> CurveRates:
         """Calculate spot, discount and forward rates."""
         X = self._get_basis_functions(maturities)
-        
-        if hasattr(self.estimator, 'predict'):
-            spot_rates = self.estimator.predict(X)
-        else:
-            spot_rates = X @ self.coef_
-            
+        spot_rates = self.estimator.predict(X)
         discount_factors = np.exp(-maturities * spot_rates)
         
         # Calculate forward rates if using Laguerre
@@ -180,13 +175,22 @@ class CurveStripper(BaseEstimator, RegressorMixin):
             temp1 = maturities / self.lambda1
             temp = np.exp(-temp1)
             temp2 = maturities / self.lambda2
+            
             X_forward = np.column_stack([
                 np.ones_like(maturities),
                 temp,
                 temp1 * temp,
                 temp2 * np.exp(-temp2)
             ])
-            forward_rates = self.estimator.predict(X_forward)
+            
+            # Get coefficients from the estimator if possible
+            if hasattr(self.estimator, 'coef_'):
+                forward_rates = X_forward @ self.estimator.coef_
+            else:
+                try: 
+                    forward_rates = self.estimator.predict(X_forward)
+                except:
+                    forward_rates = None
             
         return CurveRates(
             maturities=maturities,
