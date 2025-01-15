@@ -1,11 +1,9 @@
-import numpy as np
-from yieldcurveml.utils.utils import get_swap_rates
-from yieldcurveml.stripcurve.stripcurve import CurveStripper
 from sklearn.ensemble import ExtraTreesRegressor
 import matplotlib.pyplot as plt
-import os 
 
-print(f"\n ----- Running: {os.path.basename(__file__)}... ----- \n")
+from yieldcurveml.utils import get_swap_rates
+from yieldcurveml.stripcurve import CurveStripper
+
 
 def main():
     # Get example data
@@ -27,51 +25,44 @@ def main():
     stripper_laguerre.fit(data.maturity, data.rate, tenor_swaps="6m")
     stripper_cubic.fit(data.maturity, data.rate, tenor_swaps="6m")
     
-    # Create interpolation points for smoother curves
-    maturities_fine = np.linspace(min(data.maturity), max(data.maturity), 100)
+    # Get and print diagnostics
+    laguerre_diagnostics = stripper_laguerre.get_diagnostics()
+    cubic_diagnostics = stripper_cubic.get_diagnostics()
     
-    # Get predictions
-    pred_laguerre = stripper_laguerre.predict(maturities_fine)
-    pred_cubic = stripper_cubic.predict(maturities_fine)
+    print("\nLaguerre Model Diagnostics:")
+    print(CurveStripper.regression_report(laguerre_diagnostics, "Laguerre"))
     
-    # Plot results
-    fig, axes = plt.subplots(3, 2, figsize=(15, 12))
-    fig.suptitle('Comparison of Laguerre vs Cubic Basis Functions with ExtraTrees')
+    print("\nCubic Model Diagnostics:")
+    print(CurveStripper.regression_report(cubic_diagnostics, "Cubic"))
+
+    # Create figure
+    fig, axes = plt.subplots(2, 2, figsize=(15, 10))
     
-    # Plot Discount Factors
-    axes[0, 0].plot(data.maturity, stripper_laguerre.rates_.discount_factors, 'o-', label='Original points')
-    axes[0, 0].plot(maturities_fine, pred_laguerre.discount_factors, '--', label='Interpolated')
-    axes[0, 0].set_title('Discount Factors (Laguerre)')
+    # Plot discount factors
+    axes[0, 0].plot(data.maturity, stripper_laguerre.curve_rates_.discount_factors, 'o-', label='Laguerre')
+    axes[0, 0].plot(data.maturity, stripper_cubic.curve_rates_.discount_factors, 's--', label='Cubic')
+    axes[0, 0].set_title('Discount Factors')
     axes[0, 0].legend()
+    axes[0, 0].grid(True)
     
-    axes[0, 1].plot(data.maturity, stripper_cubic.rates_.discount_factors, 'o-', label='Original points')
-    axes[0, 1].plot(maturities_fine, pred_cubic.discount_factors, '--', label='Interpolated')
-    axes[0, 1].set_title('Discount Factors (Cubic)')
+    # Plot spot rates
+    axes[0, 1].plot(data.maturity, stripper_laguerre.curve_rates_.spot_rates, 'o-', label='Laguerre')
+    axes[0, 1].plot(data.maturity, stripper_cubic.curve_rates_.spot_rates, 's--', label='Cubic')
+    axes[0, 1].plot(data.maturity, data.rate, 'kx', label='Original')
+    axes[0, 1].set_title('Spot Rates')
     axes[0, 1].legend()
+    axes[0, 1].grid(True)
     
-    # Plot Spot Rates
-    axes[1, 0].plot(data.maturity, stripper_laguerre.rates_.spot_rates, 'o-', color='blue', label='Original points')
-    axes[1, 0].plot(maturities_fine, pred_laguerre.spot_rates, '--', color='red', label='Interpolated')
-    axes[1, 0].set_title('Spot Rates (Laguerre)')
-    axes[1, 0].legend()
-    
-    axes[1, 1].plot(data.maturity, stripper_cubic.rates_.spot_rates, 'o-', color='blue', label='Original points')
-    axes[1, 1].plot(maturities_fine, pred_cubic.spot_rates, '--', color='red', label='Interpolated')
-    axes[1, 1].set_title('Spot Rates (Cubic)')
-    axes[1, 1].legend()
-    
-    # Plot Forward Rates (only for Laguerre)
-    if stripper_laguerre.rates_.forward_rates is not None:
-        axes[2, 0].plot(data.maturity, stripper_laguerre.rates_.forward_rates, 'o-', color='blue', label='Original points')
-        if pred_laguerre.forward_rates is not None:
-            axes[2, 0].plot(maturities_fine, pred_laguerre.forward_rates, '--', color='blue', label='Interpolated')
-        axes[2, 0].set_title('Forward Rates (Laguerre)')
-        axes[2, 0].legend()
-    
-    axes[2, 1].set_visible(False)  # Hide the last plot since cubic doesn't have forward rates
+    # Plot forward rates (Laguerre only)
+    if stripper_laguerre.curve_rates_.forward_rates is not None:
+        axes[1, 0].plot(data.maturity, stripper_laguerre.curve_rates_.forward_rates, 'o-', label='Laguerre')
+        axes[1, 0].set_title('Forward Rates (Laguerre)')
+        axes[1, 0].legend()
+        axes[1, 0].grid(True)
     
     plt.tight_layout()
     plt.show()
+
 
 if __name__ == "__main__":
     main()
