@@ -14,6 +14,7 @@ from sklearn.metrics import (
 from ..utils.utils import swap_cashflows_matrix
 import pandas as pd
 from tabulate import tabulate
+from scipy.optimize import newton
 
 @dataclass
 class RatesContainer:
@@ -91,7 +92,7 @@ class CurveStripper(BaseEstimator, RegressorMixin):
         lambda2: float = 4.5,
         type_regressors: Literal["laguerre", "cubic"] = "laguerre"
     ):
-        self.estimator = ExtraTreesRegressor(n_estimators=100, random_state=42) if estimator is None else estimator
+        self.estimator = estimator
         self.lambda1 = lambda1
         self.lambda2 = lambda2
         self.type_regressors = type_regressors
@@ -122,22 +123,7 @@ class CurveStripper(BaseEstimator, RegressorMixin):
         swap_rates: np.ndarray,
         tenor_swaps: Literal["1m", "3m", "6m", "1y"] = "6m"
     ) -> "CurveStripper":
-        """Fit the curve stripper model.
-        
-        Parameters
-        ----------
-        maturities : array-like of shape (n_samples,)
-            Maturities of the swap rates
-        swap_rates : array-like of shape (n_samples,)
-            Swap rates
-        tenor_swaps : {"1m", "3m", "6m", "1y"}, default="6m"
-            Tenor of the swap rates
-            
-        Returns
-        -------
-        self : CurveStripper
-            Fitted estimator
-        """
+        """Fit the curve stripper model."""
         # Store inputs
         self.rates_ = RatesContainer(
             maturities=np.asarray(maturities),
@@ -151,15 +137,87 @@ class CurveStripper(BaseEstimator, RegressorMixin):
             tenor_swaps=tenor_swaps
         )
         
-        # Get basis functions
-        X = self._get_basis_functions(maturities)
-        y = (self.cashflows_.cashflow_matrix.sum(axis=1) - 1) / maturities
-        
-        # Fit the model
-        self.estimator.fit(X, y)
-        
-        # Calculate rates using the input maturities and store them
-        self.curve_rates_ = self._calculate_rates(maturities)
+        if self.estimator is None:
+            # Bootstrap method
+            n_maturities = len(maturities)
+            spot_rates = np.zeros(n_maturities)
+            discount_factors = np.zeros(n_maturities)
+            
+            # Initial guess: spot rates = swap rates
+            spot_rates[0] = swap_rates[0]
+            discount_factors[0] = np.exp(-maturities[0] * spot_rates[0])
+            
+            # Bootstrap iteratively
+            for i in range(1, n_maturities):
+                def swap_value(rate):
+                    # Calculate discount factor for current rate
+                    df = np.exp(-maturities[i] * rate)
+                    
+                    # Get cashflows and dates for current swap
+                    cashflows = self.cashflows_.cashflow_matrix[i, :i+1]
+                    payment_times = self.cashflows_.cashflow_dates[i, :i+1]
+                    
+                    # Interpolate discount factors
+                    disc_factors = np.interp(
+                        payment_times,
+                        maturities[:i+1],
+                        np.append(discount_factors[:i], df)
+                    )
+                    
+                    # Return swap value
+                    return np.sum(cashflows * disc_factors) - 1
+                
+                try:
+                    # Use scipy.optimize.newton with more relaxed parameters
+                    spot_rates[i] = newton(
+                        swap_value,
+                        x0=swap_rates[i],  # Initial guess
+                        tol=1e-6,          # Relaxed tolerance
+                        maxiter=1000,      # More iterations
+                        rtol=1e-6,         # Relative tolerance
+                        full_output=False,
+                        disp=False
+                    )
+                except RuntimeError:
+                    # Fallback: use previous rate if Newton fails
+                    print(f"Warning: Newton failed to converge for maturity {maturities[i]}. Using fallback.")
+                    spot_rates[i] = spot_rates[i-1]
+                
+                discount_factors[i] = np.exp(-maturities[i] * spot_rates[i])
+
+            # Calculate forward rates using numerical differentiation
+            h = 1e-6  # Small step size
+            forward_rates = np.zeros_like(maturities)
+            
+            # First point: forward derivative
+            spot_plus_h = -np.log(np.interp(maturities[0] + h, maturities, discount_factors)) / (maturities[0] + h)
+            forward_rates[0] = spot_rates[0] + maturities[0] * (spot_plus_h - spot_rates[0]) / h
+            
+            # Middle points: centered difference
+            for i in range(1, n_maturities - 1):
+                spot_plus_h = -np.log(np.interp(maturities[i] + h, maturities, discount_factors)) / (maturities[i] + h)
+                spot_minus_h = -np.log(np.interp(maturities[i] - h, maturities, discount_factors)) / (maturities[i] - h)
+                derivative = (spot_plus_h - spot_minus_h) / (2 * h)
+                forward_rates[i] = spot_rates[i] + maturities[i] * derivative
+            
+            # Last point: backward derivative
+            spot_minus_h = -np.log(np.interp(maturities[-1] - h, maturities, discount_factors)) / (maturities[-1] - h)
+            forward_rates[-1] = spot_rates[-1] + maturities[-1] * (spot_rates[-1] - spot_minus_h) / h
+
+            # Store results
+            self.curve_rates_ = CurveRates(
+                maturities=maturities,
+                spot_rates=spot_rates,
+                discount_factors=discount_factors,
+                forward_rates=forward_rates
+            )
+            
+        else:
+            # Original regression-based method
+            X = self._get_basis_functions(maturities)
+            y = (self.cashflows_.cashflow_matrix.sum(axis=1) - 1) / maturities
+            self.estimator.fit(X, y)
+            self.curve_rates_ = self._calculate_rates(maturities)
         
         return self
     

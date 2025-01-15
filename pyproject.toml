@@ -12,6 +12,7 @@ dependencies = [
     "numpy<2.0.0",
     "nnetsauce>=0.29.5",
     "scikit-learn>=1.0.0",
+    "scipy"
 ]
 
 [project.scripts]
