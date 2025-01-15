@@ -15,8 +15,8 @@ def main():
     # Create and fit both models
     stripper_laguerre = CurveStripper(
         estimator=ns.CustomRegressor(
-            RandomForestRegressor(n_estimators=10, random_state=42), 
-            #LinearRegression(),
+            #RandomForestRegressor(n_estimators=10, random_state=42), 
+            LinearRegression(),
             #Ridge(),
             n_hidden_features=100
         ),
@@ -27,8 +27,8 @@ def main():
     
     stripper_cubic = CurveStripper(
         estimator=ns.CustomRegressor(
-            RandomForestRegressor(n_estimators=10, random_state=42), 
-            #LinearRegression(),
+            #RandomForestRegressor(n_estimators=10, random_state=42), 
+            LinearRegression(),
             #Ridge(),
             n_hidden_features=100
         ),
