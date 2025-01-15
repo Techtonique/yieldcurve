@@ -1,8 +1,7 @@
-import nnetsauce as ns
-from sklearn.ensemble import RandomForestRegressor
+from sklearn.ensemble import ExtraTreesRegressor
 import matplotlib.pyplot as plt
 
-from yieldcurveml.utils import get_swap_rates
+from yieldcurveml.utils import get_swap_rates, regression_report
 from yieldcurveml.stripcurve import CurveStripper
 
 
@@ -12,35 +11,26 @@ def main():
     
     # Create and fit both models
     stripper_laguerre = CurveStripper(
-        estimator=ns.CustomRegressor(
-            RandomForestRegressor(n_estimators=10, random_state=42), 
-            n_hidden_features=100
-        ),
+        estimator=ExtraTreesRegressor(n_estimators=100, random_state=42),
         lambda1=2.5,
         lambda2=4.5,
         type_regressors="laguerre"
     )
     
     stripper_cubic = CurveStripper(
-        estimator=ns.CustomRegressor(
-            RandomForestRegressor(n_estimators=10, random_state=42), 
-            n_hidden_features=100
-        ),
+        estimator=ExtraTreesRegressor(n_estimators=100, random_state=42),
         type_regressors="cubic"
     )
     
     stripper_laguerre.fit(data.maturity, data.rate, tenor_swaps="6m")
     stripper_cubic.fit(data.maturity, data.rate, tenor_swaps="6m")
     
-    # Get and print diagnostics
-    laguerre_diagnostics = stripper_laguerre.get_diagnostics()
-    cubic_diagnostics = stripper_cubic.get_diagnostics()
+    # Print diagnostics
+    print("\nLaguerre Model:")
+    print(regression_report(stripper_laguerre, "Laguerre"))
     
-    print("\nLaguerre Model Diagnostics:")
-    print(CurveStripper.regression_report(laguerre_diagnostics, "Laguerre"))
-    
-    print("\nCubic Model Diagnostics:")
-    print(CurveStripper.regression_report(cubic_diagnostics, "Cubic"))
+    print("\nCubic Model:")
+    print(regression_report(stripper_cubic, "Cubic"))
 
     # Create figure
     fig, axes = plt.subplots(2, 2, figsize=(15, 10))

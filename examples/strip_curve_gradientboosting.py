@@ -1,8 +1,11 @@
 import numpy as np
-from yieldcurveml.utils.utils import get_swap_rates
-from yieldcurveml.stripcurve.stripcurve import CurveStripper
-from sklearn.neural_network import MLPRegressor
+from yieldcurveml.utils import get_swap_rates, regression_report
+from yieldcurveml.stripcurve import CurveStripper
+from sklearn.ensemble import GradientBoostingRegressor  
 import matplotlib.pyplot as plt
+import os 
+
+print(f"\n ----- Running: {os.path.basename(__file__)}... ----- \n")
 
 def main():
     # Get example data
@@ -10,37 +13,27 @@ def main():
     
     # Create and fit both models
     stripper_laguerre = CurveStripper(
-        estimator=MLPRegressor(hidden_layer_sizes=(100,), max_iter=1000, random_state=42),
+        estimator=GradientBoostingRegressor(random_state=42),
         lambda1=2.5,
         lambda2=4.5,
         type_regressors="laguerre"
     )
     
     stripper_cubic = CurveStripper(
-        estimator=MLPRegressor(hidden_layer_sizes=(100,), max_iter=1000, random_state=42),
+        estimator=GradientBoostingRegressor(random_state=42),
         type_regressors="cubic"
     )
     
     stripper_laguerre.fit(data.maturity, data.rate, tenor_swaps="6m")
     stripper_cubic.fit(data.maturity, data.rate, tenor_swaps="6m")
     
-    # Get and print diagnostics
-    laguerre_diagnostics = stripper_laguerre.get_diagnostics()
-    cubic_diagnostics = stripper_cubic.get_diagnostics()
+    # Print diagnostics
+    print("\nLaguerre Model:")
+    print(regression_report(stripper_laguerre, "Laguerre"))
     
-    print("\nLaguerre Model Diagnostics:")
-    print(CurveStripper.regression_report(laguerre_diagnostics, "Laguerre"))
-    
-    print("\nCubic Model Diagnostics:")
-    print(CurveStripper.regression_report(cubic_diagnostics, "Cubic"))
-    
-    # Create interpolation points for smoother curves
-    maturities_fine = np.linspace(min(data.maturity), max(data.maturity), 100)
-    
-    # Get predictions
-    pred_laguerre = stripper_laguerre.predict(maturities_fine)
-    pred_cubic = stripper_cubic.predict(maturities_fine)
-    
+    print("\nCubic Model:")
+    print(regression_report(stripper_cubic, "Cubic"))
+
     # Create figure
     fig, axes = plt.subplots(2, 2, figsize=(15, 10))
     

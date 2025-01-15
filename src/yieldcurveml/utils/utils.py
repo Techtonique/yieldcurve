@@ -1,6 +1,8 @@
 import numpy as np
 from typing import List, Dict, Union, Literal, NamedTuple
 from dataclasses import dataclass
+import pandas as pd
+from tabulate import tabulate
 
 @dataclass
 class SwapCashflows:
@@ -158,3 +160,85 @@ def get_swap_rates(dataset: Literal["ap10", "and07", "ab13e6m", "ab13ois", "nega
         )
     
     return swap_rates[dataset]
+
+def regression_report(
+    model: 'CurveStripper',
+    name: str = "Model"
+) -> str:
+    """Create a formatted report of regression diagnostics for a fitted CurveStripper model.
+    
+    Parameters
+    ----------
+    model : CurveStripper
+        Fitted CurveStripper model
+    name : str, default="Model"
+        Name to use for the model in the report
+        
+    Returns
+    -------
+    str
+        Formatted report string
+        
+    Examples
+    --------
+    >>> from yieldcurveml.stripcurve import CurveStripper
+    >>> from sklearn.ensemble import RandomForestRegressor
+    >>> model = CurveStripper(RandomForestRegressor())
+    >>> model.fit(X, y)
+    >>> print(regression_report(model, "RandomForest"))
+    """
+    if not hasattr(model, 'curve_rates_'):
+        raise ValueError("Model must be fitted before generating report")
+        
+    diagnostics = model.get_diagnostics()
+    
+    metrics_data = {
+        'Metric': ['Samples', 'R²', 'RMSE', 'MAE', 'Min Error', 'Max Error'],
+        name: [
+            diagnostics.n_samples,
+            f"{diagnostics.r2_score:.4f}",
+            f"{diagnostics.rmse:.4f}",
+            f"{diagnostics.mae:.4f}",
+            f"{diagnostics.min_error:.4f}",
+            f"{diagnostics.max_error:.4f}"
+        ]
+    }
+    
+    summary_data = {
+        'Statistic': ['Mean', 'Std Dev', 'Median', 'MAD', 'Skewness', 'Kurtosis'],
+        name: [
+            f"{diagnostics.residuals_summary['mean']:.4f}",
+            f"{diagnostics.residuals_summary['std']:.4f}",
+            f"{diagnostics.residuals_summary['median']:.4f}",
+            f"{diagnostics.residuals_summary['mad']:.4f}",
+            f"{diagnostics.residuals_summary['skewness']:.4f}",
+            f"{diagnostics.residuals_summary['kurtosis']:.4f}"
+        ]
+    }
+    
+    percentiles_data = {
+        'Percentile': ['1%', '5%', '25%', '75%', '95%', '99%'],
+        name: [
+            f"{diagnostics.residuals_summary['percentiles']['1%']:.4f}",
+            f"{diagnostics.residuals_summary['percentiles']['5%']:.4f}",
+            f"{diagnostics.residuals_summary['percentiles']['25%']:.4f}",
+            f"{diagnostics.residuals_summary['percentiles']['75%']:.4f}",
+            f"{diagnostics.residuals_summary['percentiles']['95%']:.4f}",
+            f"{diagnostics.residuals_summary['percentiles']['99%']:.4f}"
+        ]
+    }
+    
+    metrics_df = pd.DataFrame(metrics_data)
+    summary_df = pd.DataFrame(summary_data)
+    percentiles_df = pd.DataFrame(percentiles_data)
+    
+    report = (
+        f"\nModel Performance Metrics:\n"
+        f"{tabulate(metrics_df, headers='keys', tablefmt='pipe', showindex=False)}\n\n"
+        f"Residuals Summary Statistics:\n"
+        f"{tabulate(summary_df, headers='keys', tablefmt='pipe', showindex=False)}\n\n"
+        f"Residuals Percentiles:\n"
+        f"{tabulate(percentiles_df, headers='keys', tablefmt='pipe', showindex=False)}"
+    )
+    
+    return report
