@@ -52,12 +52,21 @@ def main():
     axes[1].legend()
     axes[1].grid(True)
     
-    # Plot forward rates (Laguerre only)
-    if stripper_laguerre.curve_rates_.forward_rates is not None:
-        axes[2].plot(data.maturity, stripper_laguerre.curve_rates_.forward_rates, 'o-', label='Laguerre')
-        axes[2].set_title('Forward Rates (Laguerre)')
-        axes[2].legend()
-        axes[2].grid(True)
+    # Plot forward rates (both models)
+    axes[2].plot(data.maturity, stripper_laguerre.curve_rates_.forward_rates, 'o-', label='Laguerre')
+    axes[2].plot(data.maturity, stripper_cubic.curve_rates_.forward_rates, 's--', label='Cubic')
+    axes[2].set_title('Forward Rates')
+    axes[2].legend()
+    axes[2].grid(True)
+    
+    # Add y-label for all plots
+    axes[0].set_ylabel('Rate')
+    axes[1].set_ylabel('Rate')
+    axes[2].set_ylabel('Rate')
+    
+    # Add x-label for all plots
+    for ax in axes:
+        ax.set_xlabel('Maturity (years)')
     
     plt.tight_layout()
     plt.show()

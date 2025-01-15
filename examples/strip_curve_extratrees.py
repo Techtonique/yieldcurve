@@ -50,15 +50,20 @@ def main():
     axes[1].legend()
     axes[1].grid(True)
     
-    # Plot forward rates (Laguerre only)
-    if stripper_laguerre.curve_rates_.forward_rates is not None:
+    # Plot forward rates (both models)
+    if (stripper_laguerre.curve_rates_.forward_rates is not None and 
+        stripper_cubic.curve_rates_.forward_rates is not None):
         axes[2].plot(data.maturity, stripper_laguerre.curve_rates_.forward_rates, 'o-', label='Laguerre')
-        axes[2].set_title('Forward Rates (Laguerre)')
+        axes[2].plot(data.maturity, stripper_cubic.curve_rates_.forward_rates, 's--', label='Cubic')
+        axes[2].set_title('Forward Rates')
         axes[2].legend()
         axes[2].grid(True)
     
     plt.tight_layout()
     plt.show()
+
+    print(stripper_cubic.curve_rates_.forward_rates == stripper_cubic.curve_rates_.spot_rates)
+    print(stripper_laguerre.curve_rates_.forward_rates == stripper_laguerre.curve_rates_.spot_rates)
 
 
 if __name__ == "__main__":

@@ -176,7 +176,8 @@ class CurveStripper(BaseEstimator, RegressorMixin):
             temp = np.exp(-temp1)
             temp2 = maturities / self.lambda2
             
-            X_forward = np.column_stack([
+            # Base Laguerre functions
+            X_base = np.column_stack([
                 np.ones_like(maturities),
                 temp,
                 temp1 * temp,
@@ -185,13 +186,110 @@ class CurveStripper(BaseEstimator, RegressorMixin):
             
             # Get coefficients from the estimator if possible
             if hasattr(self.estimator, 'coef_') and self.estimator.coef_ is not None:
-                forward_rates = X_forward @ self.estimator.coef_
+                print("Using linear coefficients method")
+                # For nnetsauce, we need to use predict instead of direct multiplication
+                spot_rates = self.estimator.predict(X_base)
+                
+                # Calculate derivative using numerical approximation
+                h = 1e-6
+                t_plus_h = maturities + h
+                t_minus_h = maturities - h
+                
+                # Get basis functions for t+h and t-h
+                temp1_plus = t_plus_h / self.lambda1
+                temp_plus = np.exp(-temp1_plus)
+                temp2_plus = t_plus_h / self.lambda2
+                X_plus_h = np.column_stack([
+                    np.ones_like(maturities),
+                    temp_plus,
+                    temp1_plus * temp_plus,
+                    temp2_plus * np.exp(-temp2_plus)
+                ])
+                
+                temp1_minus = t_minus_h / self.lambda1
+                temp_minus = np.exp(-temp1_minus)
+                temp2_minus = t_minus_h / self.lambda2
+                X_minus_h = np.column_stack([
+                    np.ones_like(maturities),
+                    temp_minus,
+                    temp1_minus * temp_minus,
+                    temp2_minus * np.exp(-temp2_minus)
+                ])
+                
+                # Calculate forward rates using centered difference
+                spot_plus_h = self.estimator.predict(X_plus_h)
+                spot_minus_h = self.estimator.predict(X_minus_h)
+                derivative = (spot_plus_h - spot_minus_h) / (2 * h)
+                forward_rates = spot_rates + maturities * derivative
+                
+                # Validation check
+                if np.allclose(forward_rates, spot_rates):
+                    print("Warning: Forward rates are equal to spot rates!")
+                    print(f"First few derivatives: {derivative[:5]}")
+                    print(f"First few maturities: {maturities[:5]}")
             else:
-                try: 
-                    forward_rates = self.estimator.predict(X_forward)
+                print("Using numerical approximation method")
+                try:
+                    # Try numerical approximation for non-linear models using centered difference
+                    h = 1e-6  # Small step size
+                    t_plus_h = maturities + h
+                    t_minus_h = maturities - h
+                    X_plus_h = self._get_basis_functions(t_plus_h)
+                    X_minus_h = self._get_basis_functions(t_minus_h)
+                    
+                    # Calculate forward rates using centered finite difference
+                    spot_plus_h = self.estimator.predict(X_plus_h)
+                    spot_minus_h = self.estimator.predict(X_minus_h)
+                    derivative = (spot_plus_h - spot_minus_h) / (2 * h)
+                    forward_rates = spot_rates + maturities * derivative
                 except Exception as e:
+                    print(f"Error in forward rates calculation: {str(e)}")
+                    print(f"Exception type: {type(e)}")
                     forward_rates = None
-            
+
+            print(f"Final forward_rates is None: {forward_rates is None}")
+        
+        if self.type_regressors == "cubic":
+            if hasattr(self.estimator, 'coef_') and self.estimator.coef_ is not None:
+                coef = self.estimator.coef_
+                # For cubic spline: R(t) = c₁t + c₂t² + c₃t³
+                spot = (coef[0] * maturities + 
+                       coef[1] * maturities**2 + 
+                       coef[2] * maturities**3)
+                # Derivative: dR/dt = c₁ + 2c₂t + 3c₃t²
+                derivative = (coef[0] + 
+                            2 * coef[1] * maturities + 
+                            3 * coef[2] * maturities**2)
+                # Instantaneous forward rate: f(t) = R(t) + t * dR/dt
+                forward_rates = spot + maturities * derivative
+                
+                # Validation check
+                if np.allclose(forward_rates, spot):
+                    print("Warning: Forward rates are equal to spot rates!")
+                    print(f"First few derivatives: {derivative[:5]}")
+                    print(f"First few maturities: {maturities[:5]}")
+            else:
+                try:
+                    h = 1e-6
+                    t_plus_h = maturities + h
+                    t_minus_h = maturities - h
+                    X_plus_h = self._get_basis_functions(t_plus_h)
+                    X_minus_h = self._get_basis_functions(t_minus_h)
+                    
+                    spot_plus_h = self.estimator.predict(X_plus_h)
+                    spot_minus_h = self.estimator.predict(X_minus_h)
+                    derivative = (spot_plus_h - spot_minus_h) / (2 * h)
+                    forward_rates = spot_rates + maturities * derivative
+                    
+                    # Validation check
+                    if np.allclose(forward_rates, spot_rates):
+                        print("Warning: Forward rates are equal to spot rates in numerical method!")
+                        print(f"First few derivatives: {derivative[:5]}")
+                        print(f"First few maturities: {maturities[:5]}")
+                except Exception as e:
+                    print(f"Error in cubic forward rates calculation: {str(e)}")
+                    forward_rates = None
+        
         return CurveRates(
             maturities=maturities,
             spot_rates=spot_rates,
