@@ -15,6 +15,7 @@ from ..utils.utils import swap_cashflows_matrix
 import pandas as pd
 from tabulate import tabulate
 from scipy.optimize import newton
+from scipy.interpolate import interp1d
 
 @dataclass
 class RatesContainer:
@@ -157,12 +158,17 @@ class CurveStripper(BaseEstimator, RegressorMixin):
                     cashflows = self.cashflows_.cashflow_matrix[i, :i+1]
                     payment_times = self.cashflows_.cashflow_dates[i, :i+1]
                     
-                    # Interpolate discount factors
-                    disc_factors = np.interp(
-                        payment_times,
+                    # Interpolate spot rates
+                    spot_rates_interp = interp1d(
                         maturities[:i+1],
-                        np.append(discount_factors[:i], df)
+                        np.append(spot_rates[:i], rate),
+                        kind='linear',
+                        fill_value='extrapolate'
                     )
+                    
+                    # Calculate discount factors from interpolated spot rates
+                    interpolated_spots = spot_rates_interp(payment_times)
+                    disc_factors = np.exp(-payment_times * interpolated_spots)
                     
                     # Return swap value
                     return np.sum(cashflows * disc_factors) - 1
