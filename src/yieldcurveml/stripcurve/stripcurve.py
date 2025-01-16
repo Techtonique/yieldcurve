@@ -13,6 +13,7 @@ from sklearn.metrics import (
 )
 from ..utils.utils import swap_cashflows_matrix
 from ..utils.kernels import generate_kernel
+from .bootstrapcurve import RateCurveBootstrapper
 
 import pandas as pd
 from tabulate import tabulate
@@ -87,14 +88,14 @@ class CurveStripper(BaseEstimator, RegressorMixin):
     type_regressors : str, default="laguerre"
         Type of basis functions, one of "laguerre", "cubic"
     """
-    
     def __init__(
         self,
         estimator=None,
         lambda1: float = 2.5,
         lambda2: float = 4.5,
-        type_regressors: Literal["laguerre", "cubic", "kernel"] = "laguerre",
-        kernel_type: Literal['matern', 'rbf', 'rationalquadratic', 'smithwilson'] = 'matern',
+        type_regressors: Optional[Literal["laguerre", "cubic", "kernel"]] = None,
+        kernel_type: Optional[Literal['matern', 'rbf', 'rationalquadratic', 'smithwilson']] = None,
+        interpolation: Literal['linear', 'cubic'] = 'linear',
         **kwargs
     ):
         self.estimator = estimator
@@ -102,7 +103,14 @@ class CurveStripper(BaseEstimator, RegressorMixin):
         self.lambda2 = lambda2
         self.type_regressors = type_regressors
         self.kernel_type = kernel_type
+        self.interpolation = interpolation
+        self.cashflow_dates_ = None
+        if self.type_regressors != "kernel":
+            self.kernel_type = None
+        self.maturities = None
         self.kernel_params_ = kwargs  # Store kernel parameters
+        self.coef_ = None
+
     def _get_basis_functions(self, maturities: np.ndarray) -> np.ndarray:
         """Generate basis functions for the regression."""
         if self.type_regressors == "laguerre":
@@ -130,154 +138,129 @@ class CurveStripper(BaseEstimator, RegressorMixin):
         self, 
         maturities: np.ndarray, 
         swap_rates: np.ndarray,
-        tenor_swaps: Literal["1m", "3m", "6m", "1y"] = "6m"
+        tenor_swaps: Literal["1m", "3m", "6m", "1y"] = "6m",
+        T_UFR: Optional[float] = None
     ) -> "CurveStripper":
         """Fit the curve stripper model."""
+        self.maturities = maturities
         # Store inputs
         self.rates_ = RatesContainer(
             maturities=np.asarray(maturities),
             swap_rates=np.asarray(swap_rates)
         )
-        
-        # For kernel regressors, store nodal points
-        if self.type_regressors == "kernel":
-            self.kernel_params_['nodal_points'] = maturities
-            # Generate training features
-            X = generate_kernel(
-                maturities.reshape(-1, 1),
-                kernel_type=self.kernel_type,
-                **self.kernel_params_
-            )
-        else:
-            X = self._get_basis_functions(maturities)
-            
+        print("self.rates_.maturities: ", self.rates_.maturities)
+        print("self.rates_.swap_rates: ", self.rates_.swap_rates)
         # Get cashflows and store them
         self.cashflows_ = swap_cashflows_matrix(
             swap_rates=swap_rates,
             maturities=maturities,
             tenor_swaps=tenor_swaps
         )
-        
-        if self.estimator is None:
+        self.cashflow_dates_ = self.cashflows_.cashflow_dates[-1]        
+        if self.type_regressors == None and self.estimator is None:
             # Bootstrap method
-            n_maturities = len(maturities)
-            spot_rates = np.zeros(n_maturities)
-            discount_factors = np.zeros(n_maturities)
-            
-            # Initial guess: spot rates = swap rates
-            spot_rates[0] = swap_rates[0]
-            discount_factors[0] = np.exp(-maturities[0] * spot_rates[0])
-            
-            # Bootstrap iteratively
-            for i in range(1, n_maturities):
-                def swap_value(rate):
-                    # Calculate discount factor for current rate
-                    df = np.exp(-maturities[i] * rate)
-                    
-                    # Get cashflows and dates for current swap
-                    cashflows = self.cashflows_.cashflow_matrix[i, :i+1]
-                    payment_times = self.cashflows_.cashflow_dates[i, :i+1]
-                    
-                    # Interpolate spot rates
-                    spot_rates_interp = interp1d(
-                        maturities[:i+1],
-                        np.append(spot_rates[:i], rate),
-                        kind='linear',
-                        fill_value='extrapolate'
-                    )
-                    
-                    # Calculate discount factors from interpolated spot rates
-                    interpolated_spots = spot_rates_interp(payment_times)
-                    disc_factors = np.exp(-payment_times * interpolated_spots)
-                    
-                    # Return swap value
-                    return np.sum(cashflows * disc_factors) - 1
-                
-                try:
-                    # Use scipy.optimize.newton with more relaxed parameters
-                    spot_rates[i] = newton(
-                        swap_value,
-                        x0=swap_rates[i],  # Initial guess
-                        tol=1e-6,          # Relaxed tolerance
-                        maxiter=1000,      # More iterations
-                        rtol=1e-6,         # Relative tolerance
-                        full_output=False,
-                        disp=False
-                    )
-                except RuntimeError:
-                    # Fallback: use previous rate if Newton fails
-                    print(f"Warning: Newton failed to converge for maturity {maturities[i]}. Using fallback.")
-                    spot_rates[i] = spot_rates[i-1]
-                
-                discount_factors[i] = np.exp(-maturities[i] * spot_rates[i])
-
-            # Calculate forward rates using numerical differentiation
-            h = 1e-6  # Small step size
-            forward_rates = np.zeros_like(maturities)
-            
-            # First point: forward derivative
-            spot_plus_h = -np.log(np.interp(maturities[0] + h, maturities, discount_factors)) / (maturities[0] + h)
-            forward_rates[0] = spot_rates[0] + maturities[0] * (spot_plus_h - spot_rates[0]) / h
-            
-            # Middle points: centered difference
-            for i in range(1, n_maturities - 1):
-                spot_plus_h = -np.log(np.interp(maturities[i] + h, maturities, discount_factors)) / (maturities[i] + h)
-                spot_minus_h = -np.log(np.interp(maturities[i] - h, maturities, discount_factors)) / (maturities[i] - h)
-                derivative = (spot_plus_h - spot_minus_h) / (2 * h)
-                forward_rates[i] = spot_rates[i] + maturities[i] * derivative
-            
-            # Last point: backward derivative
-            spot_minus_h = -np.log(np.interp(maturities[-1] - h, maturities, discount_factors)) / (maturities[-1] - h)
-            forward_rates[-1] = spot_rates[-1] + maturities[-1] * (spot_rates[-1] - spot_minus_h) / h
-
-            # Store results
-            self.curve_rates_ = CurveRates(
-                maturities=maturities,
-                spot_rates=spot_rates,
-                discount_factors=discount_factors,
-                forward_rates=forward_rates
+            bootstrapper = RateCurveBootstrapper()
+            self.curve_rates_ = bootstrapper.bootstrap_curve(
+                maturities=self.rates_.maturities,
+                swap_rates=self.rates_.swap_rates
             )
+            #print("self.curve_rates_.spot_rates: ", self.curve_rates_.spot_rates)
+            #print("self.curve_rates_.discount_factors: ", self.curve_rates_.discount_factors)
+            #print("self.curve_rates_.forward_rates: ", self.curve_rates_.forward_rates)
+            #print("self.curve_rates_.maturities: ", self.curve_rates_.maturities)
             
-        else:
-            # Original regression-based method
-            X = self._get_basis_functions(maturities)
-            y = (self.cashflows_.cashflow_matrix.sum(axis=1) - 1) / maturities
-            self.estimator.fit(X, y)
-            self.curve_rates_ = self._calculate_rates(maturities)
-        
+        if self.type_regressors == "kernel":
+            if self.estimator is None:
+                # Direct kernel solver (kernel inversion)
+                lambda_reg = self.kernel_params_.get('lambda_reg', 1e-6)
+                print("self.kernel_params_: ", self.kernel_params_)
+                # Generate kernel matrix using cashflow dates
+                K = generate_kernel(
+                    self.cashflow_dates_,
+                    kernel_type=self.kernel_type,
+                    **self.kernel_params_
+                )
+                print("K shape: ", K.shape)
+                # Add regularization
+                K_reg = K + lambda_reg * np.eye(len(K))                
+                # Calculate coefficients (solving the system)
+                C = self.cashflows_.cashflow_matrix
+                print("C shape: ", C.shape)
+                V = np.ones_like(self.maturities)
+                print("V shape: ", V.shape)
+
+                if self.kernel_type == "smithwilson":
+                    # For Smith-Wilson, include UFR adjustment
+                    ufr = self.kernel_params_.get('ufr', 0.03)
+                    mu = np.exp(-ufr * self.cashflow_dates_)
+                    target = V - C @ mu
+                    print("Target shape: ", target.shape)
+                else:
+                    target = V
+                # Solve the system
+                A = C @ K_reg @ C.T
+                #A = (A + A.T) / 2  # Ensure symmetry
+                print("A shape: ", A.shape)
+                print("Target shape: ", target.shape)
+                self.coef_ = np.linalg.solve(A, target)
+                print("Coef shape: ", self.coef_.shape)
+            else:
+                # Kernel regression (using kernel as features)
+                X = generate_kernel(
+                    maturities.reshape(-1, 1),
+                    kernel_type=self.kernel_type,
+                    **self.kernel_params_
+                )
+                y = (self.cashflows_.cashflow_matrix.sum(axis=1) - 1) / maturities
+                self.estimator.fit(X, y)        
+        # Calculate initial rates
+        self.curve_rates_ = self._calculate_rates(self.maturities)
         return self
     
     def _calculate_rates(self, maturities: np.ndarray, X: Optional[np.ndarray] = None) -> CurveRates:
         """Calculate spot rates, forward rates, and discount factors."""
-        if self.estimator is None:
-            # For bootstrap method, interpolate the stored rates
-            from scipy.interpolate import interp1d
+        print("\n\n self.kernel_type: ", self.kernel_type)
+        if self.estimator is None:            
+            if self.coef_ is None:                
+                K_interp = generate_kernel(
+                    self.maturities.reshape(-1, 1),
+                    kernel_type=self.kernel_type,
+                    **{k: v for k, v in self.kernel_params_.items() if k != 'nodal_points'}
+                )
+            else: 
+                # Direct kernel prediction
+                K_interp = generate_kernel(
+                    maturities.reshape(-1, 1),
+                    kernel_type=self.kernel_type,
+                    nodal_points=self.maturities.reshape(-1, 1),
+                    **{k: v for k, v in self.kernel_params_.items() if k != 'nodal_points'}
+                )            
+            # Calculate discount factors
+            if self.kernel_type == "smithwilson":
+                ufr = self.kernel_params_.get('ufr', 0.03)
+                mu_interp = np.exp(-ufr * maturities)
+                discount_factors = mu_interp + K_interp @ self.coef_
+            else:
+                discount_factors = K_interp @ self.coef_            
+            # Calculate spot rates from discount factors
+            spot_rates = -np.log(discount_factors) / maturities            
+        elif self.estimator is None:
+            # Bootstrap method
+            # Calculate initial spot rates from swap rates
+            spot_rates = self.rates_.swap_rates.copy()  # Start with swap rates as initial guess
+            discount_factors = np.exp(-maturities * spot_rates)
             
-            # Create interpolation function for spot rates
-            spot_rate_interp = interp1d(
-                self.rates_.maturities,
-                self.curve_rates_.spot_rates,
-                kind='linear',
-                fill_value='extrapolate'
-            )
-            
-            # Interpolate spot rates at requested maturities
-            spot_rates = spot_rate_interp(maturities)
-        else:
-            # For regression methods, predict using features
+        else: # Regression prediction
             if X is None:
                 X = self._get_basis_functions(maturities)
             spot_rates = self.estimator.predict(X)
+            discount_factors = np.exp(-maturities * spot_rates)
         
-        # Calculate discount factors
-        discount_factors = np.exp(-maturities * spot_rates)
-        
-        # Calculate forward rates (excluding the last point)
+        # Calculate forward rates
         forward_rates = np.zeros_like(spot_rates)
         forward_rates[:-1] = -(np.log(discount_factors[1:]) - np.log(discount_factors[:-1])) / (
             maturities[1:] - maturities[:-1]
         )
-        # Set the last forward rate equal to the last spot rate
         forward_rates[-1] = spot_rates[-1]
         
         return CurveRates(
@@ -289,27 +272,55 @@ class CurveStripper(BaseEstimator, RegressorMixin):
     
     def predict(self, maturities: np.ndarray) -> CurveRates:
         """Predict rates for given maturities."""
-        # Check if fitted
         check_is_fitted(self)
+        # Ensure maturities is 2D for kernel methods
+        maturities = np.asarray(maturities).reshape(-1)  # First ensure 1D
         
-        # Convert to numpy array
-        maturities = np.asarray(maturities)
-        
-        # For kernel regressors, we need to generate the kernel features
-        if self.type_regressors == "kernel":
-            # Generate kernel features relative to training points
-            X = generate_kernel(
-                maturities.reshape(-1, 1),
-                kernel_type=self.kernel_type,
-                nodal_points=self.rates_.maturities,  # Use training points as nodes
-                **{k: v for k, v in self.kernel_params_.items() if k != 'nodal_points'}  # Exclude nodal_points
+        if self.type_regressors == None and self.estimator is None:
+            # Interpolate bootstrap results using scipy's interp1d
+            spot_rate_interpolator = interp1d(
+                self.curve_rates_.maturities,
+                self.curve_rates_.spot_rates,
+                kind=self.interpolation,
+                fill_value='extrapolate'
             )
-        else:
-            # For other regressors, use the standard basis functions
-            X = self._get_basis_functions(maturities.ravel())
+            spot_rates = spot_rate_interpolator(maturities)
+            discount_factors = np.exp(-maturities * spot_rates)
+            
+            # Calculate forward rates
+            forward_rates = np.zeros_like(spot_rates)
+            forward_rates[:-1] = -(np.log(discount_factors[1:]) - np.log(discount_factors[:-1])) / (
+                maturities[1:] - maturities[:-1]
+            )
+            forward_rates[-1] = spot_rates[-1]
+            
+            return CurveRates(
+                maturities=maturities,
+                spot_rates=spot_rates,
+                forward_rates=forward_rates,
+                discount_factors=discount_factors
+            )
         
-        # Calculate rates using the appropriate features
-        return self._calculate_rates(maturities.ravel(), X)
+        if self.type_regressors == "kernel":
+            if self.estimator is None:
+                # Direct kernel prediction
+                return self._calculate_rates(maturities)
+            else:
+                # Ensure both inputs are 2D for kernel generation
+                maturities_2d = maturities.reshape(-1, 1)
+                nodal_points_2d = self.maturities.reshape(-1, 1)
+                
+                X = generate_kernel(
+                    maturities_2d,
+                    kernel_type=self.kernel_type,
+                    nodal_points=nodal_points_2d,
+                    **{k: v for k, v in self.kernel_params_.items() if k != 'nodal_points'}
+                )
+                return self._calculate_rates(maturities, X)
+        else:
+            # Standard basis functions
+            X = self._get_basis_functions(maturities.ravel())
+            return self._calculate_rates(maturities.ravel(), X)
     
     def get_diagnostics(
         self,

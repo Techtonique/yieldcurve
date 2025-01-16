@@ -41,8 +41,18 @@ def main():
     )
     
     # Add bootstrapped stripper
-    stripper_bootstrap = CurveStripper(
-        estimator=None  # None means use bootstrap method
+    #stripper_bootstrap = CurveStripper(
+    #    estimator=None  # None means use bootstrap method
+    #)
+
+    # Smith-Wilson direct
+    stripper_sw_direct = CurveStripper(
+        estimator=None,
+        type_regressors="kernel",
+        kernel_type="smithwilson",
+        alpha=0.1,
+        ufr=0.03,
+        lambda_reg=1e-6
     )
     
     # Fit all strippers
@@ -51,11 +61,13 @@ def main():
         'Matern': stripper_matern,
         'Smith-Wilson (UFR=3%)': stripper_sw,
         'Smith-Wilson (no UFR)': stripper_sw_no_ufr,
-        'Bootstrap': stripper_bootstrap
+        #'Bootstrap': stripper_bootstrap,
+        'Smith-Wilson Direct': stripper_sw_direct
     }
     
     for name, stripper in strippers.items():
         stripper.fit(data.maturity, data.rate)
+        print("Coeffs: ", stripper.coef_)
     
     # Create extended maturity grid for extrapolation
     t_extended = np.linspace(0, max(data.maturity) * 1.5, 100)
@@ -67,13 +79,11 @@ def main():
     for idx, (name, stripper) in enumerate(strippers.items()):
         if idx < len(axes):  # Ensure we don't exceed available subplots
             # Get predictions on extended grid
-            predictions = stripper.predict(t_extended)
-            
+            predictions = stripper.predict(t_extended)            
             # Plot spot rates
             axes[idx].plot(t_extended, predictions.spot_rates, '-', label='Spot Rates')
             axes[idx].plot(t_extended, predictions.forward_rates, '--', label='Forward Rates')
-            axes[idx].plot(data.maturity, data.rate, 'ko', label='Market Rates')
-            
+            axes[idx].plot(data.maturity, data.rate, 'ko', label='Market Rates')            
             # If using Smith-Wilson with UFR, plot the UFR level
             if name == 'Smith-Wilson (UFR=3%)':
                 axes[idx].axhline(0.03, color='r', linestyle=':', label='UFR')
@@ -89,7 +99,7 @@ def main():
     plt.show()
     
     # Plot discount factors comparison
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=(8, 6))
     for name, stripper in strippers.items():
         predictions = stripper.predict(t_extended)
         plt.plot(t_extended, predictions.discount_factors, '-', label=name)

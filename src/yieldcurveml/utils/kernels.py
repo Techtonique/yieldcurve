@@ -50,7 +50,7 @@ def smith_wilson_kernel(t: np.ndarray, u: np.ndarray, alpha: float = 0.1, ufr: O
         # Return without UFR adjustment
         return wilson_term
 
-def generate_kernel(X, kernel_type='rbf', **kwargs):
+def generate_kernel(X, kernel_type='rbf', nodal_points=None, **kwargs):
     """Generate kernel matrix using sklearn.gaussian_process.kernels or custom kernels."""
     # Convert input to numpy array
     X = np.asarray(X)
@@ -59,9 +59,8 @@ def generate_kernel(X, kernel_type='rbf', **kwargs):
         X = X.reshape(-1, 1)
         
     # Get nodal points (training points)
-    nodal_points = kwargs.pop('nodal_points', X)
-    if nodal_points.ndim == 1:
-        nodal_points = nodal_points.reshape(-1, 1)
+    if nodal_points is None:
+        nodal_points = X
     
     # Create kernel based on type
     if kernel_type == 'smithwilson':
