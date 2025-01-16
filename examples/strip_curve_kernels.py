@@ -41,9 +41,9 @@ def main():
     )
     
     # Add bootstrapped stripper
-    #stripper_bootstrap = CurveStripper(
-    #    estimator=None  # None means use bootstrap method
-    #)
+    stripper_bootstrap = CurveStripper(
+        estimator=None  # None means use bootstrap method
+    )
 
     # Smith-Wilson direct
     stripper_sw_direct = CurveStripper(
@@ -61,7 +61,7 @@ def main():
         'Matern': stripper_matern,
         'Smith-Wilson (UFR=3%)': stripper_sw,
         'Smith-Wilson (no UFR)': stripper_sw_no_ufr,
-        #'Bootstrap': stripper_bootstrap,
+        'Bootstrap': stripper_bootstrap,
         'Smith-Wilson Direct': stripper_sw_direct
     }
     
