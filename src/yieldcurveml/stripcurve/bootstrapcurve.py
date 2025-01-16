@@ -130,12 +130,14 @@ class RateCurveBootstrapper:
             except:
                 continue
         
-        # If all attempts fail, use specified interpolation as final fallback
-        warnings.warn(f"Newton method failed for maturity {maturities[index]}. Using {interpolation} interpolation.")
+        # If all attempts fail, use interpolation as final fallback
+        warnings.warn(f"Newton method failed for maturity {maturities[index]}. Using linear interpolation.")
+        
+        # Always use linear interpolation for fallback (more stable than cubic)
         rate = interp1d(
             maturities[:index], 
             spot_rates[:index], 
-            kind=interpolation,
+            kind='linear',  # Force linear interpolation for fallback
             bounds_error=False,
             fill_value='extrapolate'
         )(maturities[index])

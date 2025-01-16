@@ -19,6 +19,7 @@ import pandas as pd
 from tabulate import tabulate
 from scipy.optimize import newton
 from scipy.interpolate import interp1d
+import warnings
 
 @dataclass
 class RatesContainer:
@@ -164,46 +165,35 @@ class CurveStripper(BaseEstimator, RegressorMixin):
                 maturities=self.rates_.maturities,
                 swap_rates=self.rates_.swap_rates
             )
-            #print("self.curve_rates_.spot_rates: ", self.curve_rates_.spot_rates)
-            #print("self.curve_rates_.discount_factors: ", self.curve_rates_.discount_factors)
-            #print("self.curve_rates_.forward_rates: ", self.curve_rates_.forward_rates)
-            #print("self.curve_rates_.maturities: ", self.curve_rates_.maturities)
             
         if self.type_regressors == "kernel":
             if self.estimator is None:
                 # Direct kernel solver (kernel inversion)
-                lambda_reg = self.kernel_params_.get('lambda_reg', 1e-6)
-                print("self.kernel_params_: ", self.kernel_params_)
-                # Generate kernel matrix using cashflow dates
+                lambda_reg = self.kernel_params_.get('lambda_reg', 1e-6)                
+                # Generate kernel matrix using maturities
                 K = generate_kernel(
                     self.cashflow_dates_,
                     kernel_type=self.kernel_type,
                     **self.kernel_params_
-                )
-                print("K shape: ", K.shape)
-                # Add regularization
-                K_reg = K + lambda_reg * np.eye(len(K))                
+                )                
                 # Calculate coefficients (solving the system)
                 C = self.cashflows_.cashflow_matrix
-                print("C shape: ", C.shape)
                 V = np.ones_like(self.maturities)
-                print("V shape: ", V.shape)
-
                 if self.kernel_type == "smithwilson":
                     # For Smith-Wilson, include UFR adjustment
                     ufr = self.kernel_params_.get('ufr', 0.03)
                     mu = np.exp(-ufr * self.cashflow_dates_)
-                    target = V - C @ mu
-                    print("Target shape: ", target.shape)
-                else:
-                    target = V
-                # Solve the system
-                A = C @ K_reg @ C.T
-                #A = (A + A.T) / 2  # Ensure symmetry
-                print("A shape: ", A.shape)
-                print("Target shape: ", target.shape)
-                self.coef_ = np.linalg.solve(A, target)
-                print("Coef shape: ", self.coef_.shape)
+                    print("mu shape: ", mu.shape)
+                    print("C shape: ", C.shape)
+                    print("V shape: ", V.shape)
+                    target = V - C @ mu              
+                    # Solve the system using C @ K @ C.T to get correct dimensions
+                    A = C @ K @ C.T + lambda_reg * np.eye(len(C))  # Now A is (n_maturities × n_maturities)
+                    self.coef_ = np.linalg.solve(A, target)  # Now dimensions match                    
+                else:          
+                    A = C @ C.T
+                    A = (A + A.T) / 2  # Ensure symmetry
+                    self.coef_ = np.linalg.solve(A, V)
             else:
                 # Kernel regression (using kernel as features)
                 X = generate_kernel(
@@ -219,7 +209,9 @@ class CurveStripper(BaseEstimator, RegressorMixin):
     
     def _calculate_rates(self, maturities: np.ndarray, X: Optional[np.ndarray] = None) -> CurveRates:
         """Calculate spot rates, forward rates, and discount factors."""
-        print("\n\n self.kernel_type: ", self.kernel_type)
+        if self.type_regressors is None:
+            return self.curve_rates_
+        
         if self.estimator is None:            
             if self.coef_ is None:                
                 K_interp = generate_kernel(
@@ -230,20 +222,40 @@ class CurveStripper(BaseEstimator, RegressorMixin):
             else: 
                 # Direct kernel prediction
                 K_interp = generate_kernel(
-                    maturities.reshape(-1, 1),
+                    maturities,
                     kernel_type=self.kernel_type,
-                    nodal_points=self.maturities.reshape(-1, 1),
+                    nodal_points=self.cashflow_dates_,
                     **{k: v for k, v in self.kernel_params_.items() if k != 'nodal_points'}
                 )            
-            # Calculate discount factors
-            if self.kernel_type == "smithwilson":
-                ufr = self.kernel_params_.get('ufr', 0.03)
-                mu_interp = np.exp(-ufr * maturities)
-                discount_factors = mu_interp + K_interp @ self.coef_
-            else:
-                discount_factors = K_interp @ self.coef_            
-            # Calculate spot rates from discount factors
-            spot_rates = -np.log(discount_factors) / maturities            
+                # Calculate discount factors
+                if self.kernel_type == "smithwilson":
+                    ufr = self.kernel_params_.get('ufr', 0.03)
+                    mu_interp = np.exp(-ufr * maturities)
+                    # Use cashflow matrix for final calculation
+                    C = self.cashflows_.cashflow_matrix
+                    print("C shape: ", C.shape)
+                    print("K_interp shape: ", K_interp.shape)
+                    print("self.coef_ shape: ", self.coef_.shape)
+                    discount_factors = mu_interp + K_interp @ C.T @ self.coef_
+                else:
+                    discount_factors = K_interp @ self.coef_
+                    
+                # Calculate spot rates directly
+                spot_rates = -np.log(discount_factors) / maturities
+                
+                # Calculate forward rates
+                forward_rates = np.zeros_like(spot_rates)
+                forward_rates[:-1] = -(np.log(discount_factors[1:]) - np.log(discount_factors[:-1])) / (
+                    maturities[1:] - maturities[:-1]
+                )
+                forward_rates[-1] = spot_rates[-1]
+                
+                return CurveRates(
+                    maturities=maturities,
+                    spot_rates=spot_rates,
+                    forward_rates=forward_rates,
+                    discount_factors=discount_factors
+                )
         elif self.estimator is None:
             # Bootstrap method
             # Calculate initial spot rates from swap rates
