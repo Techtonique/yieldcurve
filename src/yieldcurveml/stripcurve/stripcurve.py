@@ -131,7 +131,7 @@ class CurveStripper(BaseEstimator, RegressorMixin):
         self.cashflow_dates_ = self.cashflows_.cashflow_dates[-1]        
         if self.type_regressors == None and self.estimator is None:
             # Bootstrap method
-            bootstrapper = RateCurveBootstrapper()
+            bootstrapper = RateCurveBootstrapper(interpolation=self.interpolation)
             self.curve_rates_ = bootstrapper.fit(
                 maturities=self.rates_.maturities,
                 swap_rates=self.rates_.swap_rates,
@@ -213,8 +213,6 @@ class CurveStripper(BaseEstimator, RegressorMixin):
                     discount_factors = K_interp @ self.coef_
                     
                 # Calculate spot rates directly
-                print("discount_factors shape: ", discount_factors.shape)
-                print("maturities shape: ", maturities.shape)
                 spot_rates = -np.log(discount_factors) / maturities
                 
                 # Calculate forward rates

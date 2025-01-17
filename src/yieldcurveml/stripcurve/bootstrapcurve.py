@@ -81,7 +81,7 @@ class RateCurveBootstrapper(BaseEstimator, RegressorMixin):
             mask_cashflow_dates = (self.cashflow_dates_ <= current_maturity) # mask for cashflow dates before maturity
             cashflow_dates = self.cashflow_dates_[mask_cashflow_dates] # cashflow dates before maturity
             cashflows = self.cashflows_[i, mask_cashflow_dates] # cashflows before maturity 
-            if (not np.all(self.spot_rates_ <= 0)): #
+            if (not np.all(self.spot_rates_ <= 0)): # at least one spot rate is positive
                 spot_rates = np.interp(x=cashflow_dates, 
                                     xp=self.maturities[mask_maturities], 
                                     fp=self.spot_rates_[mask_maturities]) if self.interpolation == 'linear' else interp1d(self.maturities[mask_maturities], self.spot_rates_[mask_maturities], kind=self.interpolation)
