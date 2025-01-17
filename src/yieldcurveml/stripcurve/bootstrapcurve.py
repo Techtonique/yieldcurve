@@ -64,10 +64,12 @@ class RateCurveBootstrapper:
         """Validate input arrays."""
         if len(maturities) != len(swap_rates):
             raise ValueError("Maturities and swap rates must have same length")
-        if not np.all(np.diff(maturities) > 0):
-            raise ValueError("Maturities must be strictly increasing")
-        if np.any(maturities <= 0) or np.any(swap_rates < 0):
-            raise ValueError("Maturities must be positive and swap rates non-negative")
+        if not np.all(np.diff(maturities) > 1e-10):
+            raise ValueError("Maturities must be strictly increasing with minimum spacing of 1e-10")
+        if np.any(maturities <= 0):
+            raise ValueError("Maturities must be positive")
+        if np.any(~np.isfinite(maturities)) or np.any(~np.isfinite(swap_rates)):
+            raise ValueError("Maturities and swap rates must be finite numbers")
     
     def _compute_discount_factor(self, maturity: float, rate: float) -> float:
         """Compute discount factor from spot rate."""
@@ -131,8 +133,6 @@ class RateCurveBootstrapper:
                 continue
         
         # If all attempts fail, use interpolation as final fallback
-        warnings.warn(f"Newton method failed for maturity {maturities[index]}. Using linear interpolation.")
-        
         # Always use linear interpolation for fallback (more stable than cubic)
         rate = interp1d(
             maturities[:index], 

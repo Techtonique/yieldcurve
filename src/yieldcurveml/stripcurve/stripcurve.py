@@ -241,6 +241,8 @@ class CurveStripper(BaseEstimator, RegressorMixin):
                     discount_factors = K_interp @ self.coef_
                     
                 # Calculate spot rates directly
+                print("discount_factors shape: ", discount_factors.shape)
+                print("maturities shape: ", maturities.shape)
                 spot_rates = -np.log(discount_factors) / maturities
                 
                 # Calculate forward rates

@@ -6,17 +6,9 @@ from sklearn.linear_model import Ridge
 
 def main():
     # Get example data
-    data = get_swap_rates("ap10")
+    data = get_swap_rates("ab13ois")
     
-    # Initialize different kernel strippers    
-    stripper_matern = CurveStripper(
-        estimator=Ridge(alpha=1e-6),
-        type_regressors="kernel",
-        kernel_type="matern",
-        length_scale=2.0,
-        nu=1.5
-    )
-    
+ 
     stripper_sw = CurveStripper(
         estimator=Ridge(alpha=1e-6),
         type_regressors="kernel",
@@ -33,10 +25,6 @@ def main():
         ufr=None
     )
     
-    # Add bootstrapped stripper
-    stripper_bootstrap = CurveStripper(
-        estimator=None  # None means use bootstrap method
-    )
 
     # Smith-Wilson direct
     stripper_sw_direct = CurveStripper(
@@ -47,14 +35,18 @@ def main():
         ufr=0.055,
         lambda_reg=1e-4
     )
+
+    # Add bootstrapped stripper
+    stripper_bootstrap = CurveStripper(
+        estimator=None  # None means use bootstrap method
+    )
     
     # Fit all strippers
     strippers = {
-        'Matern': stripper_matern,
-        'Smith-Wilson (UFR=3%)': stripper_sw,
-        'Smith-Wilson (no UFR)': stripper_sw_no_ufr,
         'Bootstrap': stripper_bootstrap,
-        'Smith-Wilson Direct': stripper_sw_direct
+        'Smith-Wilson (UFR=3%)': stripper_sw,
+        'Smith-Wilson (no UFR)': stripper_sw_no_ufr,        
+        'Smith-Wilson Direct': stripper_sw_direct,        
     }
     
     for name, stripper in strippers.items():
@@ -62,7 +54,7 @@ def main():
         print("Coeffs: ", stripper.coef_)
     
     # Create extended maturity grid for extrapolation
-    t_extended = np.linspace(0, max(data.maturity) * 1.5, 100)
+    t_extended = np.linspace(1, max(data.maturity) * 1.5, 100)
     
     # Plot results with symlog scale for negative rates
     fig, axes = plt.subplots(1, 3, figsize=(15, 5))
@@ -81,10 +73,11 @@ def main():
             values = getattr(predictions, config['attr'])
             ax.plot(t_extended, values, config['style'], label=name)
             
-        # Add market rates to spot and forward rate plots
-        if config['title'] in ['Spot Rates', 'Forward Rates']:
-            ax.plot(data.maturity, data.rate, 'ko', label='Market Rates')
-            
+            # Add dots for bootstrap points
+            if name == 'Bootstrap':
+                bootstrap_values = getattr(stripper.curve_rates_, config['attr'])
+                ax.plot(stripper.curve_rates_.maturities, bootstrap_values, 'o', color='blue')
+                        
         # Add UFR level to relevant plots
         if config['title'] in ['Spot Rates', 'Forward Rates']:
             ax.axhline(0.03, color='r', linestyle=':', label='UFR')
