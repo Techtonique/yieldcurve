@@ -84,7 +84,7 @@ class RateCurveBootstrapper(BaseEstimator, RegressorMixin):
             if (not np.all(self.spot_rates_ <= 0)): #
                 spot_rates = np.interp(x=cashflow_dates, 
                                     xp=self.maturities[mask_maturities], 
-                                    fp=self.spot_rates_[mask_maturities]) 
+                                    fp=self.spot_rates_[mask_maturities]) if self.interpolation == 'linear' else interp1d(self.maturities[mask_maturities], self.spot_rates_[mask_maturities], kind=self.interpolation)
             else: # first guess for spot rate is the swap rate
                 spot_rates = self.swap_rates[0]
             dfs = np.exp(-cashflow_dates*spot_rates)

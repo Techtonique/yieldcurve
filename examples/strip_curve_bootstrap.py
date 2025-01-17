@@ -12,7 +12,7 @@ def main():
         # Get example data
         data = get_swap_rates(dataset)        
         
-        stripper_bootstrap = CurveStripper()
+        stripper_bootstrap = CurveStripper(interpolation='cubic')
         
         stripper_bootstrap.fit(data.maturity, 
                                data.rate, 
