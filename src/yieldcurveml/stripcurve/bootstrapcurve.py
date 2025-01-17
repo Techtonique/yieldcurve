@@ -1,23 +1,42 @@
 import numpy as np
-from scipy.optimize import newton
-from scipy.interpolate import interp1d
-from dataclasses import dataclass
-from typing import Optional, Tuple, Literal
 import warnings
+from scipy.optimize import minimize, root_scalar
+from scipy.interpolate import interp1d
+from sklearn.base import BaseEstimator, RegressorMixin
+from typing import Optional, Tuple, Literal
+from ..utils.utils import swap_cashflows_matrix
+from ..utils.datastructures import RatesContainer, CurveRates, RegressionDiagnostics
 
-@dataclass
-class CurveRates:
-    maturities: np.ndarray
-    spot_rates: np.ndarray
-    discount_factors: np.ndarray
-    forward_rates: np.ndarray
 
-class RateCurveBootstrapper:
-    def bootstrap_curve(
+class RateCurveBootstrapper(BaseEstimator, RegressorMixin):
+    """
+    Bootstrap interest rate curve from swap rates.
+
+    Parameters
+    ----------
+
+    interpolation: Literal['linear', 'cubic'] = 'linear'
+    """
+    def __init__(
+        self,
+        interpolation: Literal['linear', 'cubic'] = 'linear'
+    ):
+        self.interpolation = interpolation
+        self.maturities = None
+        self.swap_rates = None
+        self.tenor_swaps = None
+        self.n_maturities_ = None
+        self.cashflows_ = None
+        self.cashflow_dates_ = None
+        self.spot_rates_ = None
+        self.discount_factors_ = None 
+        self.forward_rates_ = None
+
+    def fit(
         self, 
         maturities: np.ndarray, 
         swap_rates: np.ndarray,
-        interpolation: Literal['linear', 'cubic'] = 'cubic'
+        tenor_swaps: Literal["1m", "3m", "6m", "1y"] = "6m",
     ) -> CurveRates:
         """
         Bootstrap interest rate curve from swap rates using an improved procedure.
@@ -25,125 +44,95 @@ class RateCurveBootstrapper:
         Args:
             maturities: Array of swap maturities
             swap_rates: Array of corresponding swap rates
-            interpolation: Type of interpolation to use ('linear' or 'cubic')
+            tenor_swaps: Tenor of the swaps to use for the bootstrap
             
         Returns:
             CurveRates object containing bootstrapped curves
         """
-        if interpolation not in ['linear', 'cubic']:
+        if self.interpolation not in ['linear', 'cubic']:
             raise ValueError("interpolation must be either 'linear' or 'cubic'")
-            
-        n_maturities = len(maturities)
-        spot_rates = np.zeros(n_maturities)
-        discount_factors = np.zeros(n_maturities)
-        
-        # Validate inputs
-        self._validate_inputs(maturities, swap_rates)
-        
-        # Initialize first point
-        spot_rates[0] = swap_rates[0]
-        discount_factors[0] = self._compute_discount_factor(maturities[0], spot_rates[0])
+        self.maturities = maturities        
+        self.swap_rates = swap_rates
+        self.tenor_swaps = tenor_swaps
+        self.spot_rates_ = self.swap_rates
+        self._validate_inputs()
+        if self.tenor_swaps == "1m":
+            self.freq_payments_ = 12
+        elif self.tenor_swaps == "3m":
+            self.freq_payments_ = 4
+        elif self.tenor_swaps == "6m":
+            self.freq_payments_ = 2
+        elif self.tenor_swaps == "1y":
+            self.freq_payments_ = 1
+        self.n_maturities_ = len(self.maturities)                
+        cashflow_data = swap_cashflows_matrix(
+            swap_rates=self.swap_rates,
+            maturities=self.maturities,
+            tenor_swaps=self.tenor_swaps)
+        self.cashflows_ = cashflow_data.cashflow_matrix
+        self.cashflow_dates_ = cashflow_data.cashflow_dates[-1,:]  
+        self.discount_factors_ = np.zeros(self.n_maturities_)
+        self.spot_rates_ = np.zeros(self.n_maturities_)
+        self.forward_rates_ = np.zeros(self.n_maturities_)
+
+        def objective_function(x):
+            current_maturity = self.maturities[i]
+            mask_maturities = (self.spot_rates_ > 0)
+            mask_cashflow_dates = (self.cashflow_dates_ <= current_maturity) # mask for cashflow dates before maturity
+            cashflow_dates = self.cashflow_dates_[mask_cashflow_dates] # cashflow dates before maturity
+            cashflows = self.cashflows_[i, mask_cashflow_dates] # cashflows before maturity 
+            if (not np.all(self.spot_rates_ <= 0)): #
+                spot_rates = np.interp(x=cashflow_dates, 
+                                    xp=self.maturities[mask_maturities], 
+                                    fp=self.spot_rates_[mask_maturities]) 
+            else: # first guess for spot rate is the swap rate
+                spot_rates = self.swap_rates[0]
+            dfs = np.exp(-cashflow_dates*spot_rates)
+            dfs[-1:] = np.exp(-current_maturity*x) # last cashflow is the maturity, we are solving for x 
+            drs_ = -np.log(dfs)/cashflow_dates # discount rates for cashflows, excluding the first date = 0
+            dfs_ = self._compute_discount_factor(cashflow_dates, drs_) # discount factors for cashflow dates after the first date = 0
+            return np.sum(cashflows*dfs_) - 1
         
         # Bootstrap iteratively
-        for i in range(1, n_maturities):
-            spot_rates[i], discount_factors[i] = self._bootstrap_rate(
-                i, maturities, spot_rates, swap_rates, interpolation
-            )
-            
+        for i in range(self.n_maturities_):
+            result = root_scalar(f=objective_function, x0=self.swap_rates[i])
+            self.spot_rates_[i] = result.root
+            self.discount_factors_[i] = self._compute_discount_factor(self.maturities[i], 
+                                                                      self.spot_rates_[i])
         # Calculate forward rates using improved method
-        forward_rates = self._calculate_forward_rates(maturities, spot_rates, discount_factors)
+        self.forward_rates_ = self._calculate_forward_rates(self.maturities, 
+                                                           self.spot_rates_, 
+                                                           self.discount_factors_)
         
         return CurveRates(
-            maturities=maturities,
-            spot_rates=spot_rates,
-            discount_factors=discount_factors,
-            forward_rates=forward_rates
+            maturities=self.maturities,
+            spot_rates=self.spot_rates_,
+            discount_factors=self.discount_factors_,
+            forward_rates=self.forward_rates_
         )
     
-    def _validate_inputs(self, maturities: np.ndarray, swap_rates: np.ndarray) -> None:
+    def _validate_inputs(self) -> None:
         """Validate input arrays."""
-        if len(maturities) != len(swap_rates):
+        if len(self.maturities) != len(self.swap_rates):
             raise ValueError("Maturities and swap rates must have same length")
-        if not np.all(np.diff(maturities) > 1e-10):
+        if not np.all(np.diff(self.maturities) > 1e-10):
             raise ValueError("Maturities must be strictly increasing with minimum spacing of 1e-10")
-        if np.any(maturities <= 0):
+        if np.any(self.maturities <= 0):
             raise ValueError("Maturities must be positive")
-        if np.any(~np.isfinite(maturities)) or np.any(~np.isfinite(swap_rates)):
+        if np.any(~np.isfinite(self.maturities)) or np.any(~np.isfinite(self.swap_rates)):
             raise ValueError("Maturities and swap rates must be finite numbers")
     
     def _compute_discount_factor(self, maturity: float, rate: float) -> float:
-        """Compute discount factor from spot rate."""
+        """Compute discount factor from spot rate.
+
+        Args:
+            maturity: Maturity of the discount factor
+            rate: Spot rate
+            
+        Returns:
+            Discount factor
+        """
         return np.exp(-maturity * rate)
-    
-    def _bootstrap_rate(
-        self, 
-        index: int, 
-        maturities: np.ndarray, 
-        spot_rates: np.ndarray, 
-        swap_rates: np.ndarray,
-        interpolation: str
-    ) -> Tuple[float, float]:
-        """Bootstrap single spot rate using improved Newton method with fallbacks."""
-        
-        def swap_value(rate: float) -> float:
-            """Compute swap value for given rate."""
-            df = self._compute_discount_factor(maturities[index], rate)
-            
-            # Get cashflows and dates
-            cashflows = self.cashflows_.cashflow_matrix[index, :index+1]
-            payment_times = self.cashflows_.cashflow_dates[index, :index+1]
-            
-            # Create interpolator based on specified method
-            spot_rates_interp = interp1d(
-                maturities[:index+1],
-                np.append(spot_rates[:index], rate),
-                kind=interpolation,
-                bounds_error=False,
-                fill_value='extrapolate'
-            )
-            
-            interpolated_spots = spot_rates_interp(payment_times)
-            disc_factors = np.exp(-payment_times * interpolated_spots)
-            
-            return np.sum(cashflows * disc_factors) - 1
-        
-        # Try Newton method with multiple initial guesses
-        initial_guesses = [
-            swap_rates[index],           # Current swap rate
-            spot_rates[index-1],         # Previous spot rate
-            (swap_rates[index] + spot_rates[index-1]) / 2  # Average
-        ]
-        
-        for guess in initial_guesses:
-            try:
-                rate = newton(
-                    swap_value,
-                    x0=guess,
-                    tol=1e-8,
-                    maxiter=1000,
-                    rtol=1e-8,
-                    full_output=False,
-                    disp=False
-                )
-                # Validate result
-                if rate > 0 and np.isfinite(rate):
-                    discount_factor = self._compute_discount_factor(maturities[index], rate)
-                    return rate, discount_factor
-            except:
-                continue
-        
-        # If all attempts fail, use interpolation as final fallback
-        # Always use linear interpolation for fallback (more stable than cubic)
-        rate = interp1d(
-            maturities[:index], 
-            spot_rates[:index], 
-            kind='linear',  # Force linear interpolation for fallback
-            bounds_error=False,
-            fill_value='extrapolate'
-        )(maturities[index])
-        
-        discount_factor = self._compute_discount_factor(maturities[index], rate)
-        return rate, discount_factor
     
     def _calculate_forward_rates(
         self,
@@ -151,7 +140,16 @@ class RateCurveBootstrapper:
         spot_rates: np.ndarray,
         discount_factors: np.ndarray
     ) -> np.ndarray:
-        """Calculate forward rates using improved method."""
+        """Calculate forward rates using improved method.
+        
+        Args:
+            maturities: Array of maturities
+            spot_rates: Array of spot rates
+            discount_factors: Array of discount factors
+            
+        Returns:
+            Array of forward rates
+        """
         n_maturities = len(maturities)
         forward_rates = np.zeros(n_maturities)
         

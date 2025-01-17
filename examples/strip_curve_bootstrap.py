@@ -14,19 +14,22 @@ def main():
         
         stripper_bootstrap = CurveStripper()
         
-        stripper_bootstrap.fit(data.maturity, data.rate, 
+        stripper_bootstrap.fit(data.maturity, 
+                               data.rate, 
                                tenor_swaps="6m")
         
         # Plot the results
         plt.figure(figsize=(10, 6))
-        plt.plot(data.maturity, data.rate * 100, 
-                label='Market Swap Rates')
+        plt.plot(stripper_bootstrap.rates_.maturities, stripper_bootstrap.curve_rates_.spot_rates * 100, 
+                label='Zero Rates', linewidth=2)
+        plt.plot(data.maturity, data.rate * 100, 'o', 
+                label='Market Swap Rates', markersize=8)
         plt.title(f'Bootstrapped Zero Curve - {dataset}')
         plt.xlabel('Time to Maturity (years)')
         plt.ylabel('Rate (%)')
         plt.grid(True)
         plt.legend()
         plt.show()
-  
+        
 if __name__ == "__main__":
     main()

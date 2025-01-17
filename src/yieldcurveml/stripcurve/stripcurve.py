@@ -1,4 +1,6 @@
 import numpy as np
+import pandas as pd
+import warnings
 from sklearn.base import BaseEstimator, RegressorMixin
 from sklearn.linear_model import LinearRegression, Ridge
 from sklearn.ensemble import ExtraTreesRegressor
@@ -14,66 +16,11 @@ from sklearn.metrics import (
 from ..utils.utils import swap_cashflows_matrix
 from ..utils.kernels import generate_kernel
 from .bootstrapcurve import RateCurveBootstrapper
-
-import pandas as pd
 from tabulate import tabulate
 from scipy.optimize import newton
 from scipy.interpolate import interp1d
-import warnings
+from ..utils.datastructures import RatesContainer, CurveRates, RegressionDiagnostics
 
-@dataclass
-class RatesContainer:
-    """Container for input rates data"""
-    maturities: np.ndarray
-    swap_rates: np.ndarray
-
-@dataclass
-class CurveRates:
-    """Container for curve stripping results"""
-    maturities: np.ndarray
-    spot_rates: np.ndarray
-    discount_factors: np.ndarray
-    forward_rates: Optional[np.ndarray] = None
-    min_cv_error: Optional[float] = None
-
-@dataclass
-class RegressionDiagnostics:
-    """Container for regression diagnostics
-    
-    Parameters
-    ----------
-    r2_score : float
-        R-squared score (coefficient of determination)
-    rmse : float
-        Root Mean Square Error
-    mae : float
-        Mean Absolute Error
-    max_error : float
-        Maximum absolute error
-    min_error : float
-        Minimum absolute error
-    residuals : np.ndarray
-        Model residuals (actual - predicted)
-    fitted_values : np.ndarray
-        Model predictions
-    actual_values : np.ndarray
-        Actual values
-    n_samples : int
-        Number of samples
-    residuals_summary : dict
-        Summary statistics of residuals including mean, std, 
-        median, and various percentiles
-    """
-    r2_score: float
-    rmse: float
-    mae: float
-    max_error: float
-    min_error: float
-    residuals: np.ndarray
-    fitted_values: np.ndarray
-    actual_values: np.ndarray
-    n_samples: int
-    residuals_summary: dict
 
 class CurveStripper(BaseEstimator, RegressorMixin):
     """Yield curve stripping estimator.
@@ -109,8 +56,14 @@ class CurveStripper(BaseEstimator, RegressorMixin):
         if self.type_regressors != "kernel":
             self.kernel_type = None
         self.maturities = None
+        self.swap_rates = None
+        self.tenor_swaps = None
+        self.T_UFR = None
         self.kernel_params_ = kwargs  # Store kernel parameters
         self.coef_ = None
+        self.cashflows_ = None
+        self.cashflow_dates_ = None
+        self.curve_rates_ = None
 
     def _get_basis_functions(self, maturities: np.ndarray) -> np.ndarray:
         """Generate basis functions for the regression."""
@@ -142,28 +95,47 @@ class CurveStripper(BaseEstimator, RegressorMixin):
         tenor_swaps: Literal["1m", "3m", "6m", "1y"] = "6m",
         T_UFR: Optional[float] = None
     ) -> "CurveStripper":
-        """Fit the curve stripper model."""
+        """Fit the curve stripper model.
+        
+        Parameters
+        ----------
+        maturities : np.ndarray
+            Maturities of the swap rates
+        swap_rates : np.ndarray
+            Swap rates
+        tenor_swaps : Literal["1m", "3m", "6m", "1y"], default="6m"
+            Tenor of the swaps to use for the bootstrap
+        T_UFR : float, default=None
+            UFR to use for the Smith-Wilson method
+
+        Returns
+        -------
+        self : CurveStripper
+            Fitted curve stripper model
+        """
         self.maturities = maturities
+        self.swap_rates = swap_rates
+        self.tenor_swaps = tenor_swaps
+        self.T_UFR = T_UFR
         # Store inputs
         self.rates_ = RatesContainer(
             maturities=np.asarray(maturities),
             swap_rates=np.asarray(swap_rates)
         )
-        print("self.rates_.maturities: ", self.rates_.maturities)
-        print("self.rates_.swap_rates: ", self.rates_.swap_rates)
         # Get cashflows and store them
         self.cashflows_ = swap_cashflows_matrix(
-            swap_rates=swap_rates,
-            maturities=maturities,
-            tenor_swaps=tenor_swaps
+            swap_rates=self.swap_rates,
+            maturities=self.maturities,
+            tenor_swaps=self.tenor_swaps
         )
         self.cashflow_dates_ = self.cashflows_.cashflow_dates[-1]        
         if self.type_regressors == None and self.estimator is None:
             # Bootstrap method
             bootstrapper = RateCurveBootstrapper()
-            self.curve_rates_ = bootstrapper.bootstrap_curve(
+            self.curve_rates_ = bootstrapper.fit(
                 maturities=self.rates_.maturities,
-                swap_rates=self.rates_.swap_rates
+                swap_rates=self.rates_.swap_rates,
+                tenor_swaps=self.tenor_swaps
             )
             
         if self.type_regressors == "kernel":
