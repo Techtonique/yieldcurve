@@ -71,22 +71,21 @@ class CurveStripper(BaseEstimator, RegressorMixin):
             temp1 = maturities / self.lambda1
             temp = np.exp(-temp1)
             temp2 = maturities / self.lambda2
-            X = np.column_stack([
+            return np.column_stack([
                 np.ones_like(maturities),
                 temp,
                 temp1 * temp,
                 temp2 * np.exp(-temp2)
             ])
         elif self.type_regressors == "cubic":  # cubic
-            X = np.column_stack([
+            return  np.column_stack([
                 maturities,
                 maturities**2,
                 maturities**3
             ])
         elif self.type_regressors == "kernel":
-            X = generate_kernel(maturities, kernel_type=self.kernel_type, 
-                              **self.kernel_params_)
-        return X
+            return generate_kernel(maturities, kernel_type=self.kernel_type, 
+                              **self.kernel_params_)        
     
     def fit(
         self, 
@@ -155,9 +154,6 @@ class CurveStripper(BaseEstimator, RegressorMixin):
                     # For Smith-Wilson, include UFR adjustment
                     ufr = self.kernel_params_.get('ufr', 0.03)
                     mu = np.exp(-ufr * self.cashflow_dates_)
-                    print("mu shape: ", mu.shape)
-                    print("C shape: ", C.shape)
-                    print("V shape: ", V.shape)
                     target = V - C @ mu              
                     # Solve the system using C @ K @ C.T to get correct dimensions
                     A = C @ K @ C.T + lambda_reg * np.eye(len(C))  # Now A is (n_maturities × n_maturities)
@@ -182,8 +178,7 @@ class CurveStripper(BaseEstimator, RegressorMixin):
     def _calculate_rates(self, maturities: np.ndarray, X: Optional[np.ndarray] = None) -> CurveRates:
         """Calculate spot rates, forward rates, and discount factors."""
         if self.type_regressors is None:
-            return self.curve_rates_
-        
+            return self.curve_rates_        
         if self.estimator is None:            
             if self.coef_ is None:                
                 K_interp = generate_kernel(
@@ -210,18 +205,15 @@ class CurveStripper(BaseEstimator, RegressorMixin):
                     print("self.coef_ shape: ", self.coef_.shape)
                     discount_factors = mu_interp + K_interp @ C.T @ self.coef_
                 else:
-                    discount_factors = K_interp @ self.coef_
-                    
+                    discount_factors = K_interp @ self.coef_                    
                 # Calculate spot rates directly
-                spot_rates = -np.log(discount_factors) / maturities
-                
+                spot_rates = -np.log(discount_factors) / maturities                
                 # Calculate forward rates
                 forward_rates = np.zeros_like(spot_rates)
                 forward_rates[:-1] = -(np.log(discount_factors[1:]) - np.log(discount_factors[:-1])) / (
                     maturities[1:] - maturities[:-1]
                 )
-                forward_rates[-1] = spot_rates[-1]
-                
+                forward_rates[-1] = spot_rates[-1]                
                 return CurveRates(
                     maturities=maturities,
                     spot_rates=spot_rates,
@@ -232,14 +224,12 @@ class CurveStripper(BaseEstimator, RegressorMixin):
             # Bootstrap method
             # Calculate initial spot rates from swap rates
             spot_rates = self.rates_.swap_rates.copy()  # Start with swap rates as initial guess
-            discount_factors = np.exp(-maturities * spot_rates)
-            
+            discount_factors = np.exp(-maturities * spot_rates)            
         else: # Regression prediction
             if X is None:
                 X = self._get_basis_functions(maturities)
             spot_rates = self.estimator.predict(X)
-            discount_factors = np.exp(-maturities * spot_rates)
-        
+            discount_factors = np.exp(-maturities * spot_rates)        
         # Calculate forward rates
         forward_rates = np.zeros_like(spot_rates)
         forward_rates[:-1] = -(np.log(discount_factors[1:]) - np.log(discount_factors[:-1])) / (
@@ -258,32 +248,26 @@ class CurveStripper(BaseEstimator, RegressorMixin):
         """Predict rates for given maturities."""
         check_is_fitted(self)
         # Ensure maturities is 2D for kernel methods
-        maturities = np.asarray(maturities).reshape(-1)  # First ensure 1D
-        
+        maturities = np.asarray(maturities).reshape(-1)  # First ensure 1D        
         if self.type_regressors == None and self.estimator is None:
             # Interpolate bootstrap results using scipy's interp1d
             spot_rate_interpolator = interp1d(
                 self.curve_rates_.maturities,
                 self.curve_rates_.spot_rates,
                 kind=self.interpolation,
-                fill_value='extrapolate'
-            )
+                fill_value='extrapolate')
             spot_rates = spot_rate_interpolator(maturities)
-            discount_factors = np.exp(-maturities * spot_rates)
-            
+            discount_factors = np.exp(-maturities * spot_rates)            
             # Calculate forward rates
             forward_rates = np.zeros_like(spot_rates)
             forward_rates[:-1] = -(np.log(discount_factors[1:]) - np.log(discount_factors[:-1])) / (
                 maturities[1:] - maturities[:-1]
             )
-            forward_rates[-1] = spot_rates[-1]
-            
-            return CurveRates(
-                maturities=maturities,
+            forward_rates[-1] = spot_rates[-1]            
+            return CurveRates(maturities=maturities,
                 spot_rates=spot_rates,
                 forward_rates=forward_rates,
-                discount_factors=discount_factors
-            )
+                discount_factors=discount_factors)
         
         if self.type_regressors == "kernel":
             if self.estimator is None:

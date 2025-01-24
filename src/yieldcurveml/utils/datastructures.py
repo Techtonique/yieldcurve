@@ -10,6 +10,12 @@ class RatesContainer:
     swap_rates: np.ndarray
 
 @dataclass
+class YieldsContainer:
+    """Container for input yields data"""
+    maturities: np.ndarray
+    yields: np.ndarray
+
+@dataclass
 class CurveRates:
     """Container for curve stripping results"""
     maturities: np.ndarray
