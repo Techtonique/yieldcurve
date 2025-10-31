@@ -5,7 +5,7 @@ from sklearn.base import BaseEstimator, RegressorMixin
 from sklearn.linear_model import LinearRegression, Ridge
 from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.utils.validation import check_X_y, check_array, check_is_fitted
-from typing import Literal, Optional, Union, Any
+from typing import Literal, Optional, Union
 from dataclasses import dataclass
 from sklearn.metrics import (
     r2_score,
@@ -28,29 +28,28 @@ class CurveStripper(BaseEstimator, RegressorMixin):
     Parameters
     ----------
     estimator : sklearn estimator, default=None
-        Scikit-learn estimator to use for fitting. If None, uses Ridge.
+        Scikit-learn estimator to use for fitting. If None, uses bootstrap method.
     lambda1 : float, default=2.5
         First lambda parameter for NSS function
     lambda2 : float, default=4.5
         Second lambda parameter for NSS function
     type_regressors : str, default=None
         Type of basis functions, one of "laguerre", "cubic", "kernel", or None for bootstrap
-    kernel_type : str, default='matern'
+    kernel_type : str, default=None
         Type of kernel to use if type_regressors is "kernel"
     interpolation : str, default='linear'
         Interpolation method for bootstrap
     **kwargs : dict
         Additional parameters for kernel generation
     """
-    
     def __init__(
         self,
-        estimator: Optional[Any] = None,
+        estimator=None,
         lambda1: float = 2.5,
         lambda2: float = 4.5,
-        type_regressors: Optional[str] = None,
-        kernel_type: str = 'matern',
-        interpolation: str = 'linear',
+        type_regressors: Optional[Literal["laguerre", "cubic", "kernel"]] = None,
+        kernel_type: Optional[Literal['matern', 'rbf', 'rationalquadratic', 'smithwilson']] = None,
+        interpolation: Literal['linear', 'cubic'] = 'linear',
         **kwargs
     ):
         self.estimator = estimator
@@ -59,23 +58,29 @@ class CurveStripper(BaseEstimator, RegressorMixin):
         self.type_regressors = type_regressors
         self.kernel_type = kernel_type
         self.interpolation = interpolation
-        self.kernel_params_ = kwargs  # Store kernel parameters
-        
-        # Initialize attributes that will be set during fit
         self.cashflow_dates_ = None
+        
+        # Validate configuration
+        if type_regressors in ["laguerre", "cubic"] and estimator is None:
+            warnings.warn("For basis regression methods, an estimator should be provided. Falling back to bootstrap method.")
+            self.type_regressors = None
+        
+        # Clear kernel_type if not using kernel regression
+        if self.type_regressors != "kernel":
+            self.kernel_type = None
+            
         self.maturities = None
         self.swap_rates = None
         self.tenor_swaps = None
         self.T_UFR = None
+        self.kernel_params_ = kwargs  # Store kernel parameters
         self.coef_ = None
         self.cashflows_ = None
+        self.cashflow_dates_ = None
         self.curve_rates_ = None
-        self.rates_ = None
 
     def _get_basis_functions(self, maturities: np.ndarray) -> np.ndarray:
         """Generate basis functions for the regression."""
-        maturities = np.asarray(maturities).reshape(-1)
-        
         if self.type_regressors == "laguerre":
             temp1 = maturities / self.lambda1
             temp = np.exp(-temp1)
@@ -86,37 +91,16 @@ class CurveStripper(BaseEstimator, RegressorMixin):
                 temp1 * temp,
                 temp2 * np.exp(-temp2)
             ])
-        elif self.type_regressors == "cubic":
-            return np.column_stack([
+        elif self.type_regressors == "cubic":  # cubic
+            return  np.column_stack([
                 maturities,
                 maturities**2,
                 maturities**3
             ])
         elif self.type_regressors == "kernel":
-            return generate_kernel(
-                maturities, 
-                kernel_type=self.kernel_type, 
-                **self.kernel_params_
-            )
-        else:
-            raise ValueError(f"Unsupported type_regressors: {self.type_regressors}")
-
-    def _validate_inputs(self, maturities: np.ndarray, swap_rates: np.ndarray) -> None:
-        """Validate input arrays."""
-        maturities = np.asarray(maturities)
-        swap_rates = np.asarray(swap_rates)
-        
-        if maturities.ndim != 1:
-            raise ValueError("maturities must be a 1D array")
-        if swap_rates.ndim != 1:
-            raise ValueError("swap_rates must be a 1D array")
-        if len(maturities) != len(swap_rates):
-            raise ValueError("maturities and swap_rates must have the same length")
-        if np.any(maturities <= 0):
-            raise ValueError("maturities must be positive")
-        if np.any(swap_rates < 0):
-            warnings.warn("Negative swap rates detected")
-
+            return generate_kernel(maturities, kernel_type=self.kernel_type, 
+                              **self.kernel_params_)        
+    
     def fit(
         self, 
         maturities: np.ndarray, 
@@ -142,27 +126,22 @@ class CurveStripper(BaseEstimator, RegressorMixin):
         self : CurveStripper
             Fitted curve stripper model
         """
-        # Validate inputs
-        self._validate_inputs(maturities, swap_rates)
-        
-        self.maturities = np.asarray(maturities).reshape(-1)
-        self.swap_rates = np.asarray(swap_rates).reshape(-1)
+        self.maturities = maturities
+        self.swap_rates = swap_rates
         self.tenor_swaps = tenor_swaps
         self.T_UFR = T_UFR
-        
         # Store inputs
         self.rates_ = RatesContainer(
-            maturities=self.maturities,
-            swap_rates=self.swap_rates
+            maturities=np.asarray(maturities),
+            swap_rates=np.asarray(swap_rates)
         )
-        
         # Get cashflows and store them
         self.cashflows_ = swap_cashflows_matrix(
             swap_rates=self.swap_rates,
             maturities=self.maturities,
             tenor_swaps=self.tenor_swaps
         )
-        self.cashflow_dates_ = self.cashflows_.cashflow_dates[-1]
+        self.cashflow_dates_ = self.cashflows_.cashflow_dates[-1]        
         
         # Handle different fitting methods
         if self.type_regressors is None and self.estimator is None:
@@ -175,85 +154,153 @@ class CurveStripper(BaseEstimator, RegressorMixin):
             )
             
         elif self.type_regressors == "kernel":
-            self._fit_kernel_method()
-        else:
-            self._fit_basis_regression()
-            
-        return self
-
-    def _fit_kernel_method(self) -> None:
-        """Fit using kernel methods."""
-        if self.estimator is None:
-            # Direct kernel solver (kernel inversion)
-            lambda_reg = self.kernel_params_.get('lambda_reg', 1e-6)
-            
-            # Generate kernel matrix using cashflow dates
-            K = generate_kernel(
-                self.cashflow_dates_,
-                kernel_type=self.kernel_type,
-                **self.kernel_params_
-            )
-            
-            # Calculate coefficients
-            C = self.cashflows_.cashflow_matrix
-            V = np.ones_like(self.maturities)
-            
-            if self.kernel_type == "smithwilson":
-                # For Smith-Wilson, include UFR adjustment
-                ufr = self.kernel_params_.get('ufr', 0.03)
-                mu = np.exp(-ufr * self.cashflow_dates_)
-                target = V - C @ mu
-                
-                # Solve the system
-                A = C @ K @ C.T + lambda_reg * np.eye(len(C))
-                self.coef_ = np.linalg.solve(A, target)
+            if self.estimator is None:
+                # Direct kernel solver (kernel inversion)
+                lambda_reg = self.kernel_params_.get('lambda_reg', 1e-6)                
+                # Generate kernel matrix using maturities
+                K = generate_kernel(
+                    self.cashflow_dates_,
+                    kernel_type=self.kernel_type,
+                    **self.kernel_params_
+                )                
+                # Calculate coefficients (solving the system)
+                C = self.cashflows_.cashflow_matrix
+                V = np.ones_like(self.maturities)
+                if self.kernel_type == "smithwilson":
+                    # For Smith-Wilson, include UFR adjustment
+                    ufr = self.kernel_params_.get('ufr', 0.03)
+                    mu = np.exp(-ufr * self.cashflow_dates_)
+                    target = V - C @ mu              
+                    # Solve the system using C @ K @ C.T to get correct dimensions
+                    A = C @ K @ C.T + lambda_reg * np.eye(len(C))  # Now A is (n_maturities × n_maturities)
+                    self.coef_ = np.linalg.solve(A, target)  # Now dimensions match                    
+                else:          
+                    A = C @ K @ C.T + lambda_reg * np.eye(len(C))
+                    A = (A + A.T) / 2  # Ensure symmetry
+                    self.coef_ = np.linalg.solve(A, V)
             else:
-                A = C @ K @ C.T + lambda_reg * np.eye(len(C))
-                A = (A + A.T) / 2  # Ensure symmetry
-                self.coef_ = np.linalg.solve(A, V)
+                # Kernel regression (using kernel as features)
+                X = generate_kernel(
+                    maturities.reshape(-1, 1),
+                    kernel_type=self.kernel_type,
+                    **self.kernel_params_
+                )
+                y = (self.cashflows_.cashflow_matrix.sum(axis=1) - 1) / maturities
+                self.estimator.fit(X, y)
         else:
-            # Kernel regression (using kernel as features)
-            X = generate_kernel(
-                self.maturities.reshape(-1, 1),
-                kernel_type=self.kernel_type,
-                **self.kernel_params_
-            )
-            y = (self.cashflows_.cashflow_matrix.sum(axis=1) - 1) / self.maturities
-            self.estimator.fit(X, y)
-
-    def _fit_basis_regression(self) -> None:
-        """Fit using basis function regression."""
-        if self.estimator is None:
-            # Use Ridge as default estimator
-            self.estimator = Ridge(alpha=1.0)
-            
-        X_train = self._get_basis_functions(self.maturities)
-        y_train = (self.cashflows_.cashflow_matrix.sum(axis=1) - 1) / self.maturities
+            # Standard basis regression (laguerre / cubic) : fit estimator before prediction
+            if self.estimator is not None:
+                X_train = self._get_basis_functions(np.asarray(self.maturities).reshape(-1))
+                y_train = (self.cashflows_.cashflow_matrix.sum(axis=1) - 1) / np.asarray(self.maturities)
+                # Ensure numpy arrays and correct shapes
+                X_train = np.asarray(X_train)
+                y_train = np.asarray(y_train).reshape(-1)
+                # Fit the provided estimator
+                self.estimator.fit(X_train, y_train)
         
-        # Ensure numpy arrays and correct shapes
-        X_train = np.asarray(X_train)
-        y_train = np.asarray(y_train).reshape(-1)
-        
-        # Fit the estimator
-        self.estimator.fit(X_train, y_train)
-
+        # Calculate initial rates for all methods
+        if self.curve_rates_ is None:
+            self.curve_rates_ = self._calculate_rates(self.maturities)
+        return self
+    
     def _calculate_rates(self, maturities: np.ndarray, X: Optional[np.ndarray] = None) -> CurveRates:
         """Calculate spot rates, forward rates, and discount factors."""
-        maturities = np.asarray(maturities).reshape(-1)
-        
-        # Handle bootstrap case
+        # Handle bootstrap case first
         if self.type_regressors is None and self.estimator is None:
-            if self.curve_rates_ is None:
-                raise ValueError("Curve rates not available. Model may not be fitted properly.")
-            return self._interpolate_bootstrap_rates(maturities)
+            return self.curve_rates_
 
         # Handle kernel methods
         if self.type_regressors == "kernel":
-            return self._calculate_kernel_rates(maturities)
+            if self.estimator is None:
+                # Direct kernel prediction
+                K_interp = generate_kernel(
+                    maturities,
+                    kernel_type=self.kernel_type,
+                    nodal_points=self.cashflow_dates_,
+                    **{k: v for k, v in self.kernel_params_.items() if k != 'nodal_points'}
+                )            
+                # Calculate discount factors
+                if self.kernel_type == "smithwilson":
+                    ufr = self.kernel_params_.get('ufr', 0.03)
+                    mu_interp = np.exp(-ufr * maturities)
+                    # Use cashflow matrix for final calculation
+                    C = self.cashflows_.cashflow_matrix
+                    discount_factors = mu_interp + K_interp @ C.T @ self.coef_
+                else:
+                    discount_factors = K_interp @ self.coef_                    
+            else:
+                # Kernel regression prediction
+                if X is None:
+                    nodal_points_2d = self.maturities.reshape(-1, 1)
+                    maturities_2d = maturities.reshape(-1, 1)
+                    X = generate_kernel(
+                        maturities_2d,
+                        kernel_type=self.kernel_type,
+                        nodal_points=nodal_points_2d,
+                        **{k: v for k, v in self.kernel_params_.items() if k != 'nodal_points'}
+                    )
+                spot_rates = self.estimator.predict(X)
+                discount_factors = np.exp(-maturities * spot_rates)
+                
+                # Calculate forward rates
+                forward_rates = self._calculate_forward_rates(maturities, discount_factors)
+                
+                return CurveRates(
+                    maturities=maturities,
+                    spot_rates=spot_rates,
+                    forward_rates=forward_rates,
+                    discount_factors=discount_factors
+                )
+        else:
+            # Basis regression methods (laguerre/cubic)
+            if X is None:
+                X = self._get_basis_functions(maturities)
+            
+            if self.estimator is None:
+                # This should not happen due to validation in __init__, but handle gracefully
+                raise ValueError("Estimator is required for basis regression methods")
+                
+            spot_rates = self.estimator.predict(X)
+            discount_factors = np.exp(-maturities * spot_rates)
+    
+        # Calculate spot rates from discount factors (for direct kernel methods)
+        if self.type_regressors == "kernel" and self.estimator is None:
+            spot_rates = -np.log(discount_factors) / maturities
+    
+        # Calculate forward rates
+        forward_rates = self._calculate_forward_rates(maturities, discount_factors)
+    
+        return CurveRates(
+            maturities=maturities,
+            spot_rates=spot_rates,
+            forward_rates=forward_rates,
+            discount_factors=discount_factors
+        )
+    
+    def _calculate_forward_rates(self, maturities: np.ndarray, discount_factors: np.ndarray) -> np.ndarray:
+        """Calculate forward rates from discount factors."""
+        forward_rates = np.zeros_like(maturities)
         
-        # Handle basis regression methods
-        return self._calculate_basis_rates(maturities, X)
-
+        if len(maturities) > 1:
+            # Calculate forward rates between consecutive maturities
+            for i in range(len(maturities) - 1):
+                t1, t2 = maturities[i], maturities[i+1]
+                df1, df2 = discount_factors[i], discount_factors[i+1]
+                
+                # Forward rate from t1 to t2: f(t1,t2) = -ln(df2/df1)/(t2-t1)
+                if t2 > t1 and df1 > 0 and df2 > 0:
+                    forward_rates[i] = -np.log(df2 / df1) / (t2 - t1)
+                else:
+                    forward_rates[i] = 0.0
+            
+            # For the last maturity, use the spot rate
+            forward_rates[-1] = -np.log(discount_factors[-1]) / maturities[-1] if discount_factors[-1] > 0 else 0.0
+        else:
+            # Single maturity case
+            forward_rates[0] = -np.log(discount_factors[0]) / maturities[0] if discount_factors[0] > 0 else 0.0
+            
+        return forward_rates
+    
     def _interpolate_bootstrap_rates(self, maturities: np.ndarray) -> CurveRates:
         """Interpolate bootstrap rates for requested maturities."""
         if np.array_equal(maturities, self.curve_rates_.maturities):
@@ -279,93 +326,37 @@ class CurveStripper(BaseEstimator, RegressorMixin):
             forward_rates=forward_rates,
             discount_factors=discount_factors
         )
-
-    def _calculate_kernel_rates(self, maturities: np.ndarray) -> CurveRates:
-        """Calculate rates using kernel methods."""
-        if self.estimator is None:
-            # Direct kernel prediction
-            K_interp = generate_kernel(
-                maturities,
-                kernel_type=self.kernel_type,
-                **{k: v for k, v in self.kernel_params_.items() if k != 'nodal_points'}
-            )
-            
-            if self.kernel_type == "smithwilson":
-                ufr = self.kernel_params_.get('ufr', 0.03)
-                mu_interp = np.exp(-ufr * maturities)
-                C = self.cashflows_.cashflow_matrix
-                discount_factors = mu_interp + K_interp @ C.T @ self.coef_
-            else:
-                discount_factors = K_interp @ self.coef_
-        else:
-            # Kernel regression prediction
-            nodal_points_2d = self.maturities.reshape(-1, 1)
-            maturities_2d = maturities.reshape(-1, 1)
-            
-            X = generate_kernel(
-                maturities_2d,
-                kernel_type=self.kernel_type,
-                nodal_points=nodal_points_2d,
-                **{k: v for k, v in self.kernel_params_.items() if k != 'nodal_points'}
-            )
-            spot_rates = self.estimator.predict(X)
-            discount_factors = np.exp(-maturities * spot_rates)
-            forward_rates = self._calculate_forward_rates(maturities, discount_factors)
-            
-            return CurveRates(
-                maturities=maturities,
-                spot_rates=spot_rates,
-                forward_rates=forward_rates,
-                discount_factors=discount_factors
-            )
-        
-        # Calculate rates from discount factors
-        spot_rates = -np.log(discount_factors) / maturities
-        forward_rates = self._calculate_forward_rates(maturities, discount_factors)
-        
-        return CurveRates(
-            maturities=maturities,
-            spot_rates=spot_rates,
-            forward_rates=forward_rates,
-            discount_factors=discount_factors
-        )
-
-    def _calculate_basis_rates(self, maturities: np.ndarray, X: Optional[np.ndarray] = None) -> CurveRates:
-        """Calculate rates using basis function regression."""
-        if X is None:
-            X = self._get_basis_functions(maturities)
-            
-        if self.estimator is None:
-            raise ValueError("Estimator is required for basis regression")
-            
-        spot_rates = self.estimator.predict(X)
-        discount_factors = np.exp(-maturities * spot_rates)
-        forward_rates = self._calculate_forward_rates(maturities, discount_factors)
-        
-        return CurveRates(
-            maturities=maturities,
-            spot_rates=spot_rates,
-            forward_rates=forward_rates,
-            discount_factors=discount_factors
-        )
-
-    def _calculate_forward_rates(self, maturities: np.ndarray, discount_factors: np.ndarray) -> np.ndarray:
-        """Calculate forward rates from discount factors."""
-        forward_rates = np.zeros_like(maturities)
-        if len(maturities) > 1:
-            forward_rates[:-1] = -(np.log(discount_factors[1:]) - np.log(discount_factors[:-1])) / (
-                maturities[1:] - maturities[:-1]
-            )
-            forward_rates[-1] = forward_rates[-2] if len(forward_rates) > 1 else 0.0
-        return forward_rates
-
+    
     def predict(self, maturities: np.ndarray) -> CurveRates:
         """Predict rates for given maturities."""
-        check_is_fitted(self, ['rates_'])
-        maturities = np.asarray(maturities).reshape(-1)
+        check_is_fitted(self)
+        # Ensure maturities is 2D for kernel methods
+        maturities = np.asarray(maturities).reshape(-1)  # First ensure 1D        
+        if self.type_regressors is None and self.estimator is None:
+            # Interpolate bootstrap results using scipy's interp1d
+            return self._interpolate_bootstrap_rates(maturities)
         
-        return self._calculate_rates(maturities)
-
+        if self.type_regressors == "kernel":
+            if self.estimator is None:
+                # Direct kernel prediction
+                return self._calculate_rates(maturities)
+            else:
+                # Ensure both inputs are 2D for kernel generation
+                maturities_2d = maturities.reshape(-1, 1)
+                nodal_points_2d = self.maturities.reshape(-1, 1)
+                
+                X = generate_kernel(
+                    maturities_2d,
+                    kernel_type=self.kernel_type,
+                    nodal_points=nodal_points_2d,
+                    **{k: v for k, v in self.kernel_params_.items() if k != 'nodal_points'}
+                )
+                return self._calculate_rates(maturities, X)
+        else:
+            # Standard basis functions
+            X = self._get_basis_functions(maturities.ravel())
+            return self._calculate_rates(maturities.ravel(), X)
+    
     def get_diagnostics(
         self,
         X_test: Optional[np.ndarray] = None,
@@ -407,11 +398,11 @@ class CurveStripper(BaseEstimator, RegressorMixin):
             )
         
         # Training set diagnostics
-        if self.type_regressors is None and self.estimator is None:
+        if self.estimator is None and self.type_regressors is None:
             # For bootstrap method, compare original swap rates with reconstructed rates
             y_train = self.rates_.swap_rates
             y_train_pred = self.predict(self.rates_.maturities).spot_rates
-        elif self.estimator is not None:
+        else:
             # For regression methods
             if self.type_regressors == "kernel" and self.estimator is not None:
                 X_train = generate_kernel(
@@ -420,17 +411,15 @@ class CurveStripper(BaseEstimator, RegressorMixin):
                     **self.kernel_params_
                 )
             else:
-                X_train = self._get_basis_functions(self.maturities)
-            y_train = (self.cashflows_.cashflow_matrix.sum(axis=1) - 1) / self.maturities
+                X_train = self._get_basis_functions(self.rates_.maturities)
+            y_train = (self.cashflows_.cashflow_matrix.sum(axis=1) - 1) / self.rates_.maturities
             y_train_pred = self.estimator.predict(X_train)
-        else:
-            raise ValueError("Cannot calculate diagnostics for current configuration")
         
         train_diagnostics = calculate_diagnostics(y_train, y_train_pred)
         
         # Test set diagnostics if provided
         if X_test is not None and y_test is not None:
-            if self.type_regressors is None and self.estimator is None:
+            if self.estimator is None and self.type_regressors is None:
                 y_test_pred = self.predict(X_test).spot_rates
             else:
                 if self.type_regressors == "kernel" and self.estimator is not None:
