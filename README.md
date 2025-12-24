@@ -1,6 +1,10 @@
 # Yield Curve with Machine Learning
 
-## 1. References 
+## 1. Examples: 
+
+See [examples](/examples)
+
+## 2. References 
 
 - [https://www.researchgate.net/publication/393794192_New_Short_Rate_Models_and_their_Arbitrage-Free_Extension_A_Flexible_Framework_for_Historical_and_Market-Consistent_Simulation](https://www.researchgate.net/publication/393794192_New_Short_Rate_Models_and_their_Arbitrage-Free_Extension_A_Flexible_Framework_for_Historical_and_Market-Consistent_Simulation)
 - [https://www.researchgate.net/publication/392507059_Beyond_Nelson-Siegel_and_splines_A_model-_agnostic_Machine_Learning_framework_for_discount_curve_calibration_interpolation_and_extrapolation](https://www.researchgate.net/publication/392507059_Beyond_Nelson-Siegel_and_splines_A_model-_agnostic_Machine_Learning_framework_for_discount_curve_calibration_interpolation_and_extrapolation)
