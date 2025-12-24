@@ -87,9 +87,6 @@ run-custom: ## run all custom examples with one command
 run-examples: ## run all examples with one command
 	find examples -maxdepth 2 -name "*.py" -exec  python3 {} \;
 
-run-mts: ## run all mts examples with one command
-	find examples -maxdepth 2 -name "*mts*.py" -exec  python3 {} \;
-
 run-lazy: ## run all lazy examples with one command
 	find examples -maxdepth 2 -name "lazy*.py" -exec  python3 {} \;
 
