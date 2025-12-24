@@ -1,5 +1,13 @@
 # Yield Curve with Machine Learning
 
+## 0 - Install: 
+
+### From GitHub
+
+```bash
+!pip install git+https://github.com/Techtonique/yieldcurve.git
+```
+
 ## 1. Examples: 
 
 See [examples](/examples)
