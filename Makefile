@@ -51,13 +51,45 @@ coverage: ## check code coverage quickly with the default Python
 	coverage report --omit="venv/*,yieldcurveml/tests/*" --show-missing
 
 docs: install ## generate docs		
-	#pip install black pdoc 
-	#black yieldcurveml/* --line-length=80	
-	#find yieldcurveml/ -name "*.py" -exec autopep8 --max-line-length=80 --in-place {} +
-	pdoc -t docs yieldcurveml/* --output-dir yieldcurveml-docs
-	find . -name '__pycache__' -exec rm -fr {} +
-	cp -rf yieldcurveml-docs/* ../../Pro_Website/Techtonique.github.io/yieldcurveml
+	@echo "Installing documentation dependencies..."
+	./venv/bin/pip install black pdoc 2>/dev/null || echo "Warning: Could not install black/pdoc"
+	
+	@echo "Formatting code with black..."
+	@if command -v ./venv/bin/black >/dev/null 2>&1; then \
+		find yieldcurveml -name "*.py" -exec ./venv/bin/black --line-length=80 {} + 2>/dev/null || true; \
+	else \
+		echo "Warning: black not found, skipping formatting"; \
+	fi
+	
+	@echo "Cleaning code with autopep8..."
+	@if command -v ./venv/bin/autopep8 >/dev/null 2>&1; then \
+		find yieldcurveml -name "*.py" -exec ./venv/bin/autopep8 --max-line-length=80 --in-place {} + 2>/dev/null || true; \
+	else \
+		echo "Warning: autopep8 not found, skipping cleaning"; \
+	fi
+	
+	@echo "Generating documentation with pdoc..."
+	@if command -v ./venv/bin/pdoc >/dev/null 2>&1; then \
+		./venv/bin/pdoc -t docs yieldcurveml --output-dir yieldcurveml-docs 2>/dev/null || echo "Error: pdoc failed"; \
+	else \
+		echo "Error: pdoc not found"; \
+		exit 1; \
+	fi
+	
+	@echo "Cleaning up..."
+	find . -name '__pycache__' -exec rm -fr {} + 2>/dev/null || true
+	
+	@echo "Copying documentation..."
+	@if [ -d "yieldcurveml-docs" ]; then \
+		cp -rf yieldcurveml-docs/* ../../Pro_Website/Techtonique.github.io/yieldcurveml 2>/dev/null || echo "Warning: Could not copy docs"; \
+	else \
+		echo "Error: Documentation directory not found"; \
+		exit 1; \
+	fi
+	
+	@echo "Documentation generation complete!"
 
+	
 servedocs: install ## compile the docs watching for change	 	
 	#pip install black pdoc 
 	#black yieldcurveml/* --line-length=80	
