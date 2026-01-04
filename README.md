@@ -1,9 +1,17 @@
 # Yield Curve with Machine Learning
 
-![PyPI](https://img.shields.io/pypi/v/yieldcurveml) [![PyPI - License](https://img.shields.io/pypi/l/yieldcurveml)](https://github.com/Techtonique/yieldcurve/blob/main/LICENSE) [![Downloads](https://pepy.tech/badge/yieldcurveml)](https://pepy.tech/project/yieldcurveml)[![Documentation](https://img.shields.io/badge/documentation-is_here-green)](https://techtonique.github.io/yieldcurveml/)
+![PyPI](https://img.shields.io/pypi/v/yieldcurveml) [![PyPI - License](https://img.shields.io/pypi/l/yieldcurveml)](https://github.com/Techtonique/yieldcurve/blob/main/LICENSE) [![Downloads](https://pepy.tech/badge/yieldcurveml)](https://pepy.tech/project/yieldcurveml) 
+[![Downloads](https://anaconda.org/conda-forge/yieldcurveml/badges/downloads.svg)](https://anaconda.org/conda-forge/yieldcurveml)
+[![Documentation](https://img.shields.io/badge/documentation-is_here-green)](https://techtonique.github.io/yieldcurveml/)
 
 
 ## 0 - Install: 
+
+### FromPyPI
+
+```bash
+!pip install yieldcurveml
+```
 
 ### From GitHub
 
