@@ -227,7 +227,10 @@ class CurveStripper(BaseEstimator, RegressorMixin):
                     C = self.cashflows_.cashflow_matrix
                     discount_factors = mu_interp + K_interp @ C.T @ self.coef_
                 else:
-                    discount_factors = K_interp @ self.coef_                    
+                    discount_factors = K_interp @ self.coef_  
+
+                discount_factors = enforce_no_static_arbitrage(maturities, discount_factors)
+
             else:
                 # Kernel regression prediction
                 if X is None:
