@@ -63,8 +63,8 @@ def main():
     if (stripper_laguerre.curve_rates_.forward_rates is not None and 
         stripper_cubic.curve_rates_.forward_rates is not None and
         stripper_bootstrap.curve_rates_.forward_rates is not None):
-        axes[2].plot(data.maturity, stripper_laguerre.curve_rates_.forward_rates, 'o-', label='Laguerre')
-        axes[2].plot(data.maturity, stripper_cubic.curve_rates_.forward_rates, 's--', label='Cubic')
+        axes[2].plot(data.maturity[1:], stripper_laguerre.curve_rates_.forward_rates, 'o-', label='Laguerre')
+        axes[2].plot(data.maturity[1:], stripper_cubic.curve_rates_.forward_rates, 's--', label='Cubic')
         axes[2].plot(data.maturity, stripper_bootstrap.curve_rates_.forward_rates, '^:', label='Bootstrap')
         axes[2].set_title('Forward Rates')
         axes[2].set_yscale('symlog')  # Use symlog scale to handle negative values
@@ -73,9 +73,6 @@ def main():
     
     plt.tight_layout()
     plt.show()
-
-    print(stripper_cubic.curve_rates_.forward_rates == stripper_cubic.curve_rates_.spot_rates)
-    print(stripper_laguerre.curve_rates_.forward_rates == stripper_laguerre.curve_rates_.spot_rates)
 
 
 if __name__ == "__main__":

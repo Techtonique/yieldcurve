@@ -60,8 +60,8 @@ def main():
     axes[1].grid(True)
     
     # Plot forward rates (all models)
-    axes[2].plot(data.maturity, stripper_laguerre.curve_rates_.forward_rates, 'o-', label='Laguerre')
-    axes[2].plot(data.maturity, stripper_cubic.curve_rates_.forward_rates, 's--', label='Cubic')
+    axes[2].plot(data.maturity[1:], stripper_laguerre.curve_rates_.forward_rates, 'o-', label='Laguerre')
+    axes[2].plot(data.maturity[1:], stripper_cubic.curve_rates_.forward_rates, 's--', label='Cubic')
     axes[2].plot(data.maturity, stripper_bootstrap.curve_rates_.forward_rates, '^:', label='Bootstrap')
     axes[2].set_title('Forward Rates')
     axes[2].legend()

@@ -71,7 +71,10 @@ def main():
         for name, stripper in strippers.items():
             predictions = stripper.predict(t_extended)
             values = getattr(predictions, config['attr'])
-            ax.plot(t_extended, values, config['style'], label=name)
+            try: 
+                ax.plot(t_extended[1:], values, config['style'], label=name)
+            except Exception: 
+                ax.plot(t_extended, values, config['style'], label=name)
             
             # Add dots for bootstrap points
             if name == 'Bootstrap':

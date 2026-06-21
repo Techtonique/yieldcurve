@@ -13,7 +13,7 @@ from sklearn.metrics import (
     mean_absolute_error,
     max_error
 )
-from ..utils.utils import swap_cashflows_matrix
+from ..utils.utils import swap_cashflows_matrix, enforce_no_static_arbitrage
 from ..utils.kernels import generate_kernel
 from .bootstrapcurve import RateCurveBootstrapper
 from tabulate import tabulate
@@ -241,6 +241,8 @@ class CurveStripper(BaseEstimator, RegressorMixin):
                     )
                 spot_rates = self.estimator.predict(X)
                 discount_factors = np.exp(-maturities * spot_rates)
+                discount_factors = enforce_no_static_arbitrage(maturities, discount_factors)
+                spot_rates = -np.log(discount_factors)/maturities
                 
                 # Calculate forward rates
                 forward_rates = self._calculate_forward_rates(maturities, discount_factors)
@@ -262,6 +264,8 @@ class CurveStripper(BaseEstimator, RegressorMixin):
                 
             spot_rates = self.estimator.predict(X)
             discount_factors = np.exp(-maturities * spot_rates)
+            discount_factors = enforce_no_static_arbitrage(maturities, discount_factors)
+            spot_rates = -np.log(discount_factors)/maturities
     
         # Calculate spot rates from discount factors (for direct kernel methods)
         if self.type_regressors == "kernel" and self.estimator is None:
@@ -276,31 +280,20 @@ class CurveStripper(BaseEstimator, RegressorMixin):
             forward_rates=forward_rates,
             discount_factors=discount_factors
         )
-    
+
     def _calculate_forward_rates(self, maturities: np.ndarray, discount_factors: np.ndarray) -> np.ndarray:
-        """Calculate forward rates from discount factors."""
-        forward_rates = np.zeros_like(maturities)
+        """Calculate pairwise forward rates between consecutive maturities. Length = len(maturities) - 1."""
+        if len(maturities) <= 1:
+            return np.array([])
         
-        if len(maturities) > 1:
-            # Calculate forward rates between consecutive maturities
-            for i in range(len(maturities) - 1):
-                t1, t2 = maturities[i], maturities[i+1]
-                df1, df2 = discount_factors[i], discount_factors[i+1]
-                
-                # Forward rate from t1 to t2: f(t1,t2) = -ln(df2/df1)/(t2-t1)
-                if t2 > t1 and df1 > 0 and df2 > 0:
-                    forward_rates[i] = -np.log(df2 / df1) / (t2 - t1)
-                else:
-                    forward_rates[i] = 0.0
-            
-            # For the last maturity, use the spot rate
-            forward_rates[-1] = -np.log(discount_factors[-1]) / maturities[-1] if discount_factors[-1] > 0 else 0.0
-        else:
-            # Single maturity case
-            forward_rates[0] = -np.log(discount_factors[0]) / maturities[0] if discount_factors[0] > 0 else 0.0
-            
-        return forward_rates
-    
+        t1, t2 = maturities[:-1], maturities[1:]
+        df1, df2 = discount_factors[:-1], discount_factors[1:]
+        
+        forward_rates = np.zeros(len(maturities) - 1)
+        valid = (t2 > t1) & (df1 > 0) & (df2 > 0)
+        forward_rates[valid] = -np.log(df2[valid] / df1[valid]) / (t2[valid] - t1[valid])
+        return forward_rates    
+        
     def _interpolate_bootstrap_rates(self, maturities: np.ndarray) -> CurveRates:
         """Interpolate bootstrap rates for requested maturities."""
         if np.array_equal(maturities, self.curve_rates_.maturities):
@@ -318,6 +311,7 @@ class CurveStripper(BaseEstimator, RegressorMixin):
         
         # Calculate discount factors and forward rates
         discount_factors = np.exp(-maturities * spot_rates)
+        discount_factors = enforce_no_static_arbitrage(maturities, discount_factors)
         forward_rates = self._calculate_forward_rates(maturities, discount_factors)
         
         return CurveRates(

@@ -3,6 +3,7 @@ from typing import List, Dict, Union, Literal, NamedTuple
 from dataclasses import dataclass
 import pandas as pd
 from tabulate import tabulate
+from sklearn.isotonic import IsotonicRegression
 
 @dataclass
 class SwapCashflows:
@@ -16,6 +17,16 @@ class SwapCashflows:
 class SwapRatesData(NamedTuple):
     maturity: np.ndarray
     rate: np.ndarray
+
+def enforce_no_static_arbitrage(maturities, P):
+    order = np.argsort(maturities)
+    # project onto the monotone non-increasing cone in sorted order
+    neg_P_sorted = -P[order]
+    iso = IsotonicRegression(increasing=True)
+    fitted = iso.fit_transform(np.arange(len(neg_P_sorted)), neg_P_sorted)
+    out = np.empty_like(P)
+    out[order] = -fitted
+    return out
 
 def swap_cashflows_matrix(
     swap_rates: Union[List[float], np.ndarray],
