@@ -429,3 +429,44 @@ class CurveStripper(BaseEstimator, RegressorMixin):
             return train_diagnostics, test_diagnostics
         
         return train_diagnostics
+    
+    def _second_derivative_penalty(self, fwd_rates: np.ndarray, fwd_maturities: np.ndarray) -> float:
+        """RMS of the discretized second derivative of forward rates,
+        accounting for unevenly-spaced maturities."""
+        n = len(fwd_rates)
+        if n < 3:
+            return 0.0
+        h = np.diff(fwd_maturities)
+        second_deriv = np.array([
+            2 * ((fwd_rates[i+1] - fwd_rates[i]) / h[i] -
+                (fwd_rates[i] - fwd_rates[i-1]) / h[i-1]) / (h[i-1] + h[i])
+            for i in range(1, n - 1)
+        ])
+        return float(np.sqrt(np.mean(second_deriv ** 2)))
+
+    def repricing_diagnostics(self, penalty: float = 1e-6) -> dict:
+        """True repricing error ||V - Cp|| (not the y_linear fit residual),
+        plus a curvature-penalized version for use as a hyperparameter search objective."""
+        check_is_fitted(self)
+
+        payment_dates = self.cashflow_dates_
+        C = self.cashflows_.cashflow_matrix
+        V = np.ones(C.shape[0])
+
+        curve_at_payments = self.predict(payment_dates)
+        p = curve_at_payments.discount_factors
+
+        diff_prices = C @ p - V
+        rmse = float(np.sqrt(np.mean(diff_prices ** 2)))
+        mae = float(np.mean(np.abs(diff_prices)))
+
+        fwd = curve_at_payments.forward_rates
+        fwd_mats = payment_dates[-len(fwd):]  # length-agnostic: works whether forward_rates is len n or n-1
+        curvature = self._second_derivative_penalty(fwd, fwd_mats)
+
+        return {
+            "RMSE": rmse,
+            "MAE": mae,
+            "fwd_curvature_penalty": curvature,
+            "penalized_RMSE": rmse + penalty * curvature
+        }    
