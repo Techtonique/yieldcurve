@@ -364,7 +364,7 @@ class ArbitrageFreeShortRate:
                 continue
             
             # CORRECTED: Integrate from idx_t to T_idx
-            integrals_t_to_T = np.trapz(
+            integrals_t_to_T = np.trapezoid(
                 sim_paths[:, idx_t:T_idx+1], 
                 time_grid[idx_t:T_idx+1], 
                 axis=1
@@ -459,7 +459,7 @@ class ArbitrageFreeShortRate:
         # CORRECTED: Equation 6 with proper integration
         adjusted_prices = np.zeros(n_periods)
         for T_idx in range(n_periods):
-            cum_shift_integral = np.trapz(shift[:T_idx+1], time_grid[:T_idx+1])
+            cum_shift_integral = np.trapezoid(shift[:T_idx+1], time_grid[:T_idx+1])
             adjusted_prices[T_idx] = np.exp(-cum_shift_integral) * mc_prices[T_idx]
         
         self.shift_function = shift
@@ -489,7 +489,7 @@ class ArbitrageFreeShortRate:
         idx_T = np.argmin(np.abs(time_grid - T))
         n_sims = paths.shape[0]
         
-        integrals = np.trapz(paths[:, :idx_T+1], time_grid[:idx_T+1], axis=1)
+        integrals = np.trapezoid(paths[:, :idx_T+1], time_grid[:idx_T+1], axis=1)
         discount_factors = np.exp(-integrals)
         
         price = np.mean(discount_factors)
@@ -555,11 +555,11 @@ class ArbitrageFreeShortRate:
             forward_rates = np.zeros(n_paths)
             
             for i in range(n_paths):
-                integral_reset = np.trapz(paths[i, :idx_reset+1], 
+                integral_reset = np.trapezoid(paths[i, :idx_reset+1], 
                                          time_grid[:idx_reset+1])
                 P_0_to_reset = np.exp(-integral_reset) if idx_reset > 0 else 1.0
                 
-                integral_payment = np.trapz(paths[i, :idx_payment+1], 
+                integral_payment = np.trapezoid(paths[i, :idx_payment+1], 
                                             time_grid[:idx_payment+1])
                 P_0_to_payment = np.exp(-integral_payment)
                 
@@ -629,7 +629,7 @@ class ArbitrageFreeShortRate:
                 if T_j > time_grid[-1]:
                     break
                 idx_j = np.argmin(np.abs(time_grid - T_j))
-                integral = np.trapz(paths[i, idx_option:idx_j+1], 
+                integral = np.trapezoid(paths[i, idx_option:idx_j+1], 
                                    time_grid[idx_option:idx_j+1])
                 zcb_prices.append(np.exp(-integral))
             
@@ -648,7 +648,7 @@ class ArbitrageFreeShortRate:
                 
                 payoffs[i] = notional * annuity * intrinsic
             
-            integral_to_present = np.trapz(paths[i, :idx_option+1], 
+            integral_to_present = np.trapezoid(paths[i, :idx_option+1], 
                                           time_grid[:idx_option+1])
             payoffs[i] *= np.exp(-integral_to_present)
         

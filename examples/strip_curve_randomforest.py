@@ -13,14 +13,14 @@ def main():
     
     # Create and fit both models
     stripper_laguerre = CurveStripper(
-        estimator=RandomForestRegressor(n_estimators=1000, random_state=42),
+        estimator=RandomForestRegressor(n_estimators=100, random_state=42),
         lambda1=2.5,
         lambda2=4.5,
         type_regressors="laguerre"
     )
     
     stripper_cubic = CurveStripper(
-        estimator=RandomForestRegressor(n_estimators=1000, random_state=42),
+        estimator=RandomForestRegressor(n_estimators=50, random_state=42),
         type_regressors="cubic"
     )
 
@@ -35,9 +35,11 @@ def main():
     # Print diagnostics
     print("\nLaguerre Model:")
     print(regression_report(stripper_laguerre, "Laguerre"))
+    print(stripper_laguerre.repricing_diagnostics())
     
     print("\nCubic Model:")
     print(regression_report(stripper_cubic, "Cubic"))
+    print(stripper_cubic.repricing_diagnostics())
 
     # Create figure with three plots in a row
     fig, axes = plt.subplots(1, 3, figsize=(18, 6))

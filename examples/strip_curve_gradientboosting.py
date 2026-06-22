@@ -36,9 +36,11 @@ def main():
     # Print diagnostics
     print("\nLaguerre Model:")
     print(regression_report(stripper_laguerre, "Laguerre"))
+    print(stripper_laguerre.repricing_diagnostics())
     
     print("\nCubic Model:")
     print(regression_report(stripper_cubic, "Cubic"))
+    print(stripper_cubic.repricing_diagnostics())
     
     # Skip regression report for bootstrap since it's not a regression model
     print("\nBootstrap Model:")
