@@ -35,9 +35,11 @@ def main():
     # Print diagnostics
     print("\nLaguerre Model:")
     print(regression_report(stripper_laguerre, "Laguerre"))
+    print(stripper_laguerre.repricing_diagnostics())
     
     print("\nCubic Model:")
     print(regression_report(stripper_cubic, "Cubic"))
+    print(stripper_cubic.repricing_diagnostics())
 
     # Create figure with three plots in a row
     fig, axes = plt.subplots(1, 3, figsize=(18, 6))
